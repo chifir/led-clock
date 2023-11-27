@@ -7,16 +7,36 @@
 #define CLOCK_INTERRUPT_PIN 2
 #define MODE_BUTTON_PIN 6
 
+const uint8_t DISPLAY_WIDTH = 63;
+const uint8_t HEIGHT = 3;
+const uint8_t WiDITH = 3;
+
+const uint8_t MODE[5] = {2, 8, 10, 16, 0};
+const uint8_t MODE_SIZE = 5;
+
+enum display_mode{
+  bin = 2,
+  oct = 8,
+  dec = 10,
+  hex = 16,
+  str = 0
+};
+
 const uint64_t DELTA = 410455800;
 
 volatile uint32_t seconds = 0;
+
+volatile bool trigger_display_update = true;
+
+uint8_t CURRENT_MODE_INDEX = 0;
+
 
 // SDA on A4, SCL on A5, SQW on D4
 RTC_DS3231 rtc; 
 RTC_I2C rtc_i2c;
 
-// 4 matrix in 1 row on D5
-MAX7219 <4 , 1, 5> mtrx; 
+// 8 matrix in 1 row on D5
+MAX7219 <8 , 1, 5> mtrx; 
 
 void debug_output(const char* msg) {
   Serial.println(msg);
@@ -26,6 +46,78 @@ void button_mode_handler() {
   // todo
 }
 
+void display_bin(uint32_t time) {
+  bool bin_time[32];
+  uint8_t x = 0;
+  uint8_t y = 0;
+
+  for(uint8_t i = 0; i < sizeof(uint32_t) * 8; i++) 
+  {
+    uint8_t num = (time >> i) & 1; 
+    bin_time[sizeof(uint32_t) * 8 - 1 - i] = num == 1;
+  }
+
+  for(uint8_t i = 0; i < sizeof(uint32_t) * 8; i++) 
+  {
+    bool tmp_bool = bin_time[i];
+    if (tmp_bool) {
+      mtrx.lineV(x, y, y + HEIGHT - 1);
+    } else {
+      mtrx.rectWH(x, y, WiDITH, HEIGHT, GFX_STROKE);
+    }
+    x = x + WiDITH + 1;
+    if (x >= DISPLAY_WIDTH) {
+      x = 0;
+      y = HEIGHT + 1;
+    }
+  }
+}
+
+void display_time(DateTime time_to_display, uint8_t mode) {
+  mtrx.clear();
+  mtrx.setCursor(0, 0);
+  switch (mode)
+  {
+  case display_mode::bin: {
+    display_bin(seconds);
+  }
+    break;
+  case display_mode::oct: {
+    mtrx.print(seconds, display_mode::oct);
+  }
+    break;
+  case display_mode::dec: {
+    mtrx.print(seconds, display_mode::dec);
+  }
+    break;
+  case display_mode::hex: {
+    mtrx.print(seconds, display_mode::hex);
+  }
+    break;
+  case display_mode::str:{
+    char date[6] = "hh:mm";
+    time_to_display.toString(date);
+    mtrx.print(date);
+  }
+    break;
+  default:
+    break;
+  }
+  mtrx.update();
+}
+
+/**
+ * Update display info.
+*/
+void display_update() {
+  if (trigger_display_update) {
+    DateTime now = rtc.now();
+    seconds = now.secondstime() + DELTA;
+    display_time(now, MODE[CURRENT_MODE_INDEX]);
+    trigger_display_update = false;
+  }
+}
+
 /**
  * SQW signal interruption handler
  * 
@@ -33,10 +125,7 @@ void button_mode_handler() {
  * - sends data to the display handler
 */
 void rtc_interruption_handler() {
-  seconds++;
-  Serial.println(seconds);
-  Serial.println(seconds, 2);
-  debug_output("SQW_INT");
+  trigger_display_update = true;
 }
 
 void button_setup() {
@@ -92,6 +181,25 @@ void display_setup() {
   mtrx.update();
 }
 
+
+void test_binary() {
+  int x = 0;
+  int y = 0;
+
+  mtrx.clear();
+
+  for (int i = 0; i < 4; i++) {
+    mtrx.rectWH(x, y, 3, 4, GFX_STROKE);
+    x = x + 4;
+    y = 0;
+    mtrx.lineV(x, y, y + 3);
+    x = x + 4;
+    y = 0;
+  }
+
+  mtrx.update();
+}
+
 void setup() {
   debug_output("start setup");
   if (DEBUG) {
@@ -114,11 +222,5 @@ void print_datetime() {
 }
 
 void loop() {
-  mtrx.clear();
-  mtrx.setCursor(0, 0);
-  // mtrx.print(seconds);
-  char date[6] = "hh:mm";
-  rtc.now().toString(date);
-  mtrx.print(date);
-  mtrx.update(); 
+  display_update();
 }
