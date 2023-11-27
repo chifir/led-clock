@@ -5,7 +5,7 @@
 
 #define DEBUG true
 #define CLOCK_INTERRUPT_PIN 2
-#define MODE_BUTTON_PIN 6
+#define BUTTON_INTERRUPT_PIN 6
 
 const uint8_t DISPLAY_WIDTH = 63;
 const uint8_t HEIGHT = 3;
@@ -43,7 +43,11 @@ void debug_output(const char* msg) {
 }
 
 void button_mode_handler() {
-  // todo
+  if (CURRENT_MODE_INDEX >= 0 && CURRENT_MODE_INDEX < MODE_SIZE - 1) {
+    CURRENT_MODE_INDEX++;
+  } else if (CURRENT_MODE_INDEX == MODE_SIZE - 1) {
+    CURRENT_MODE_INDEX = 0;
+  }
 }
 
 void display_bin(uint32_t time) {
@@ -130,7 +134,7 @@ void rtc_interruption_handler() {
 
 void button_setup() {
   // assign interruption handler
-  pinMode(MODE_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(BUTTON_INTERRUPT_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(CLOCK_INTERRUPT_PIN), rtc_interruption_handler, FALLING);
 }
 
