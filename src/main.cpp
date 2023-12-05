@@ -13,7 +13,8 @@ const uint8_t HEIGHT = 3;
 const uint8_t WiDITH = 3;
 const uint8_t MODE[5] = {2, 8, 10, 16, 0};
 const uint8_t MODE_SIZE = 5;
-const uint8_t DEBOUNCE_DELAY_MS = 50;
+const uint8_t DEBOUNCE_DELAY_MS = 25;
+const uint64_t DELTA = 410455800;
 
 enum display_mode{
   bin = 2,
@@ -23,19 +24,16 @@ enum display_mode{
   str = 0
 };
 
-const uint64_t DELTA = 410455800;
-
 volatile uint32_t seconds = 0;
-
 volatile bool trigger_display_update = true;
 
 uint8_t CURRENT_MODE_INDEX = 0;
 
 uint32_t offset = 0;
 
-bool final_button_state = LOW;
-bool current_button_state = LOW;
-bool previous_button_state = LOW;
+bool final_button_state = HIGH;
+bool current_button_state = HIGH;
+bool previous_button_state = HIGH;
 uint8_t debounce_time_ms = 0;
 
 // SDA on A4, SCL on A5, SQW on D4
@@ -71,16 +69,19 @@ void graph_sin(uint8_t offset) {
 }
 
 void display_bin(uint32_t time) {
+  const uint8_t START_POSITION = 16;
   bool bin_time[32];
-  uint8_t x = 0;
+  uint8_t x = START_POSITION;
   uint8_t y = 0;
 
+  // convert to binary array
   for(uint8_t i = 0; i < sizeof(uint32_t) * 8; i++) 
   {
     uint8_t num = (time >> i) & 1; 
     bin_time[sizeof(uint32_t) * 8 - 1 - i] = num == 1;
   }
 
+  // print line for 1, rectangle for 0
   for(uint8_t i = 0; i < sizeof(uint32_t) * 8; i++) 
   {
     bool tmp_bool = bin_time[i];
@@ -90,8 +91,8 @@ void display_bin(uint32_t time) {
       mtrx.rectWH(x, y, WiDITH, HEIGHT, GFX_STROKE);
     }
     x = x + WiDITH + 1;
-    if (x >= DISPLAY_WIDTH) {
-      x = 0;
+    if (x >= DISPLAY_WIDTH + START_POSITION) {
+      x = START_POSITION;
       y = HEIGHT + 1;
     }
   }
@@ -107,14 +108,17 @@ void display_time(DateTime time_to_display, uint8_t mode) {
   }
     break;
   case display_mode::oct: {
+    mtrx.setCursor(16, 0);
     mtrx.print(seconds, display_mode::oct);
   }
     break;
   case display_mode::dec: {
+    mtrx.setCursor(16, 0);
     mtrx.print(seconds, display_mode::dec);
   }
     break;
   case display_mode::hex: {
+    mtrx.setCursor(27, 0); 
     mtrx.print(seconds, display_mode::hex);
   }
     break;
@@ -266,10 +270,10 @@ bool button_mode_read(){
   return final_button_state;
 }
 
-
 void loop() {
-  display_update();
-  if (button_mode_read()) {
+  if (!button_mode_read()) {
     display_format_mode_change();
   }
+
+  display_update();
 }
