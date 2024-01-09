@@ -2,6 +2,8 @@
 #include <Arduino.h>
 #include <RTClib.h>
 #include <GyverMAX7219.h>
+#include <GyverButton.h>
+#include <EEPROM.h>
 
 #define DEBUG true
 #define CLOCK_INTERRUPT_PIN 2
@@ -13,8 +15,8 @@ const uint8_t HEIGHT = 3;
 const uint8_t WiDITH = 3;
 const uint8_t MODE[5] = {2, 8, 10, 16, 0};
 const uint8_t MODE_SIZE = 5;
-const uint8_t DEBOUNCE_DELAY_MS = 25;
-const uint64_t DELTA = 410455800;
+const uint8_t DEBOUNCE_DELAY_MS = 15;
+const uint32_t DELTA = 410455800;
 
 enum display_mode{
   bin = 2,
@@ -28,13 +30,8 @@ volatile uint32_t seconds = 0;
 volatile bool trigger_display_update = true;
 
 uint8_t CURRENT_MODE_INDEX = 0;
-
 uint32_t offset = 0;
 
-bool final_button_state = HIGH;
-bool current_button_state = HIGH;
-bool previous_button_state = HIGH;
-uint8_t debounce_time_ms = 0;
 
 // SDA on A4, SCL on A5, SQW on D4
 RTC_DS3231 rtc; 
@@ -42,6 +39,8 @@ RTC_I2C rtc_i2c;
 
 // 8 matrix in 1 row on D5
 MAX7219 <12 , 1, 5> mtrx; 
+
+GButton change_mode(BUTTON_CHANGE_MODE_PIN);
 
 void debug_output(const char* msg) {
   Serial.println(msg);
@@ -68,6 +67,9 @@ void graph_sin(uint8_t offset) {
   mtrx.update();
 }
 
+/**
+ * Displays binary date output.
+*/
 void display_bin(uint32_t time) {
   const uint8_t START_POSITION = 16;
   bool bin_time[32];
@@ -98,6 +100,9 @@ void display_bin(uint32_t time) {
   }
 }
 
+/**
+ * Calls appropriate display function by number system.
+*/
 void display_time(DateTime time_to_display, uint8_t mode) {
   mtrx.clear();
   mtrx.setCursor(0, 0);
@@ -146,11 +151,23 @@ void display_update() {
   }
 }
 
+/**
+ * Changes cyclically date format.
+*/
 void display_format_mode_change() {
   if (CURRENT_MODE_INDEX >= 0 && CURRENT_MODE_INDEX < MODE_SIZE - 1) {
     CURRENT_MODE_INDEX++;
   } else if (CURRENT_MODE_INDEX == MODE_SIZE - 1) {
     CURRENT_MODE_INDEX = 0;
+  }
+}
+
+/**
+ * Changes date format by button click.
+*/
+void button_mode_action() {
+  if (change_mode.hasClicks()) {
+    display_format_mode_change();
   }
 }
 
@@ -164,9 +181,15 @@ void rtc_interruption_handler() {
   trigger_display_update = true;
 }
 
+/**
+ * Setup buttons.
+*/
 void buttons_setup() {
-  pinMode(BUTTON_CHANGE_MODE_PIN, INPUT_PULLUP);
-  pinMode(BUTTON_CHANGE_UNIT_PIN, INPUT_PULLUP);
+  change_mode.setDebounce(50);
+  change_mode.setTimeout(300);
+  change_mode.setClickTimeout(600);
+  change_mode.setDirection(NORM_OPEN);
+  change_mode.setType(HIGH_PULL);
 }
 
 /**
@@ -218,37 +241,18 @@ void display_setup() {
   mtrx.update();
 }
 
-void test_binary() {
-  int x = 0;
-  int y = 0;
-
-  mtrx.clear();
-
-  for (int i = 0; i < 4; i++) {
-    mtrx.rectWH(x, y, 3, 4, GFX_STROKE);
-    x = x + 4;
-    y = 0;
-    mtrx.lineV(x, y, y + 3);
-    x = x + 4;
-    y = 0;
-  }
-
-  mtrx.update();
-}
-
 void setup() {
-  debug_output("start setup");
   if (DEBUG) {
     Serial.begin(9800);
   }
 
+  debug_output("start setup");
   debug_output("display setup");
   display_setup();
   debug_output("button setup");
   buttons_setup();
   debug_output("rtc setup");
   rtc_setup();
-  seconds = rtc.now().secondstime() + DELTA;
 }
 
 void print_datetime() {
@@ -257,23 +261,9 @@ void print_datetime() {
     Serial.println(date);
 }
 
-bool button_mode_read(){
-  int current_button_state = digitalRead(BUTTON_CHANGE_MODE_PIN);
-  if (current_button_state != previous_button_state) {
-    debounce_time_ms = millis();
-  }
-  if ((millis() - debounce_time_ms) >= DEBOUNCE_DELAY_MS) 
-  {
-    final_button_state = digitalRead(BUTTON_CHANGE_MODE_PIN);
-  }
-  previous_button_state = current_button_state;
-  return final_button_state;
-}
-
 void loop() {
-  if (!button_mode_read()) {
-    display_format_mode_change();
-  }
+  change_mode.tick();
 
+  button_mode_action();
   display_update();
 }
