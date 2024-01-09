@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <RTClib.h>
 #include <GyverMAX7219.h>
+#include "GyverButton.h"
 
 #define DEBUG true
 #define CLOCK_INTERRUPT_PIN 2
@@ -13,7 +14,7 @@ const uint8_t HEIGHT = 3;
 const uint8_t WiDITH = 3;
 const uint8_t MODE[5] = {2, 8, 10, 16, 0};
 const uint8_t MODE_SIZE = 5;
-const uint8_t DEBOUNCE_DELAY_MS = 25;
+const uint8_t DEBOUNCE_DELAY_MS = 15;
 const uint64_t DELTA = 410455800;
 
 enum display_mode{
@@ -26,6 +27,7 @@ enum display_mode{
 
 volatile uint32_t seconds = 0;
 volatile bool trigger_display_update = true;
+volatile bool is_display_mode_pressed = false;
 
 uint8_t CURRENT_MODE_INDEX = 0;
 
@@ -42,6 +44,8 @@ RTC_I2C rtc_i2c;
 
 // 8 matrix in 1 row on D5
 MAX7219 <12 , 1, 5> mtrx; 
+
+GButton change_mode(BUTTON_CHANGE_MODE_PIN);
 
 void debug_output(const char* msg) {
   Serial.println(msg);
@@ -146,6 +150,13 @@ void display_update() {
   }
 }
 
+void button_mode_action() {
+  if (is_display_mode_pressed) {
+    Serial.println("BTN was pressed");
+    is_display_mode_pressed = false;
+  }
+}
+
 void display_format_mode_change() {
   if (CURRENT_MODE_INDEX >= 0 && CURRENT_MODE_INDEX < MODE_SIZE - 1) {
     CURRENT_MODE_INDEX++;
@@ -164,9 +175,20 @@ void rtc_interruption_handler() {
   trigger_display_update = true;
 }
 
+/**
+ * "Display mode" button handler
+*/
+void button_mode_interruption_handler() {
+  is_display_mode_pressed = true;
+}
+
 void buttons_setup() {
-  pinMode(BUTTON_CHANGE_MODE_PIN, INPUT_PULLUP);
-  pinMode(BUTTON_CHANGE_UNIT_PIN, INPUT_PULLUP);
+  // pinMode(BUTTON_CHANGE_MODE_PIN, INPUT_PULLUP);
+  change_mode.setDebounce(50);
+  change_mode.setTimeout(300);
+  change_mode.setClickTimeout(600);
+  change_mode.setDirection(NORM_OPEN);
+  change_mode.setType(HIGH_PULL);
 }
 
 /**
@@ -199,6 +221,10 @@ void rtc_setup(){
   // assign interruption handler
   pinMode(CLOCK_INTERRUPT_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(CLOCK_INTERRUPT_PIN), rtc_interruption_handler, FALLING);
+
+  // assign btn interruption handler
+  // pinMode(BUTTON_CHANGE_MODE_PIN, INPUT_PULLUP);
+  // attachInterrupt(digitalPinToInterrupt(BUTTON_CHANGE_MODE_PIN), button_mode_interruption_handler, RISING);
 
   // clean alarms and disable them, because both registers aren't reset on reboot
   rtc.clearAlarm(1);
@@ -237,10 +263,11 @@ void test_binary() {
 }
 
 void setup() {
-  debug_output("start setup");
   if (DEBUG) {
     Serial.begin(9800);
   }
+
+  debug_output("start setup");
 
   debug_output("display setup");
   display_setup();
@@ -271,8 +298,10 @@ bool button_mode_read(){
 }
 
 void loop() {
-  if (!button_mode_read()) {
+  change_mode.tick();
+  if (change_mode.hasClicks()) {
     display_format_mode_change();
+    Serial.println("btn is clicked");
   }
 
   display_update();
