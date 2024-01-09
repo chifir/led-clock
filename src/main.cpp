@@ -2,7 +2,8 @@
 #include <Arduino.h>
 #include <RTClib.h>
 #include <GyverMAX7219.h>
-#include "GyverButton.h"
+#include <GyverButton.h>
+#include <EEPROM.h>
 
 #define DEBUG true
 #define CLOCK_INTERRUPT_PIN 2
@@ -15,7 +16,7 @@ const uint8_t WiDITH = 3;
 const uint8_t MODE[5] = {2, 8, 10, 16, 0};
 const uint8_t MODE_SIZE = 5;
 const uint8_t DEBOUNCE_DELAY_MS = 15;
-const uint64_t DELTA = 410455800;
+const uint32_t DELTA = 410455800;
 
 enum display_mode{
   bin = 2,
@@ -27,16 +28,10 @@ enum display_mode{
 
 volatile uint32_t seconds = 0;
 volatile bool trigger_display_update = true;
-volatile bool is_display_mode_pressed = false;
 
 uint8_t CURRENT_MODE_INDEX = 0;
-
 uint32_t offset = 0;
 
-bool final_button_state = HIGH;
-bool current_button_state = HIGH;
-bool previous_button_state = HIGH;
-uint8_t debounce_time_ms = 0;
 
 // SDA on A4, SCL on A5, SQW on D4
 RTC_DS3231 rtc; 
@@ -72,6 +67,9 @@ void graph_sin(uint8_t offset) {
   mtrx.update();
 }
 
+/**
+ * Displays binary date output.
+*/
 void display_bin(uint32_t time) {
   const uint8_t START_POSITION = 16;
   bool bin_time[32];
@@ -102,6 +100,9 @@ void display_bin(uint32_t time) {
   }
 }
 
+/**
+ * Calls appropriate display function by number system.
+*/
 void display_time(DateTime time_to_display, uint8_t mode) {
   mtrx.clear();
   mtrx.setCursor(0, 0);
@@ -150,18 +151,23 @@ void display_update() {
   }
 }
 
-void button_mode_action() {
-  if (is_display_mode_pressed) {
-    Serial.println("BTN was pressed");
-    is_display_mode_pressed = false;
-  }
-}
-
+/**
+ * Changes cyclically date format.
+*/
 void display_format_mode_change() {
   if (CURRENT_MODE_INDEX >= 0 && CURRENT_MODE_INDEX < MODE_SIZE - 1) {
     CURRENT_MODE_INDEX++;
   } else if (CURRENT_MODE_INDEX == MODE_SIZE - 1) {
     CURRENT_MODE_INDEX = 0;
+  }
+}
+
+/**
+ * Changes date format by button click.
+*/
+void button_mode_action() {
+  if (change_mode.hasClicks()) {
+    display_format_mode_change();
   }
 }
 
@@ -176,14 +182,9 @@ void rtc_interruption_handler() {
 }
 
 /**
- * "Display mode" button handler
+ * Setup buttons.
 */
-void button_mode_interruption_handler() {
-  is_display_mode_pressed = true;
-}
-
 void buttons_setup() {
-  // pinMode(BUTTON_CHANGE_MODE_PIN, INPUT_PULLUP);
   change_mode.setDebounce(50);
   change_mode.setTimeout(300);
   change_mode.setClickTimeout(600);
@@ -222,10 +223,6 @@ void rtc_setup(){
   pinMode(CLOCK_INTERRUPT_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(CLOCK_INTERRUPT_PIN), rtc_interruption_handler, FALLING);
 
-  // assign btn interruption handler
-  // pinMode(BUTTON_CHANGE_MODE_PIN, INPUT_PULLUP);
-  // attachInterrupt(digitalPinToInterrupt(BUTTON_CHANGE_MODE_PIN), button_mode_interruption_handler, RISING);
-
   // clean alarms and disable them, because both registers aren't reset on reboot
   rtc.clearAlarm(1);
   rtc.clearAlarm(2);
@@ -244,38 +241,18 @@ void display_setup() {
   mtrx.update();
 }
 
-void test_binary() {
-  int x = 0;
-  int y = 0;
-
-  mtrx.clear();
-
-  for (int i = 0; i < 4; i++) {
-    mtrx.rectWH(x, y, 3, 4, GFX_STROKE);
-    x = x + 4;
-    y = 0;
-    mtrx.lineV(x, y, y + 3);
-    x = x + 4;
-    y = 0;
-  }
-
-  mtrx.update();
-}
-
 void setup() {
   if (DEBUG) {
     Serial.begin(9800);
   }
 
   debug_output("start setup");
-
   debug_output("display setup");
   display_setup();
   debug_output("button setup");
   buttons_setup();
   debug_output("rtc setup");
   rtc_setup();
-  seconds = rtc.now().secondstime() + DELTA;
 }
 
 void print_datetime() {
@@ -284,25 +261,9 @@ void print_datetime() {
     Serial.println(date);
 }
 
-bool button_mode_read(){
-  int current_button_state = digitalRead(BUTTON_CHANGE_MODE_PIN);
-  if (current_button_state != previous_button_state) {
-    debounce_time_ms = millis();
-  }
-  if ((millis() - debounce_time_ms) >= DEBOUNCE_DELAY_MS) 
-  {
-    final_button_state = digitalRead(BUTTON_CHANGE_MODE_PIN);
-  }
-  previous_button_state = current_button_state;
-  return final_button_state;
-}
-
 void loop() {
   change_mode.tick();
-  if (change_mode.hasClicks()) {
-    display_format_mode_change();
-    Serial.println("btn is clicked");
-  }
 
+  button_mode_action();
   display_update();
 }
