@@ -166,7 +166,7 @@ void display_update()
   if (trigger_display_update)
   {
     DateTime now = rtc.now();
-    seconds = rtc.now().secondstime() + BASE_DEFAULT_TIMESTAMP;
+    seconds = rtc.now().secondstime() + base_timestamp;
     display_time(now, MODE[CURRENT_MODE_INDEX]);
     trigger_display_update = false;
   }
