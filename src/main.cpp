@@ -8,7 +8,7 @@
 #define DEBUG true
 #define CLOCK_INTERRUPT_PIN 2
 #define BUTTON_CHANGE_MODE_PIN 6
-#define BUTTON_CHANGE_UNIT_PIN 7
+#define BUTTON_SET_PIN 7
 #define BASE_TIMESTAMP_COUNT_OFFSET 0
 #define BASE_TIMESTAMP_OFFSET 1
 #define BASE_DEFAULT_TIMESTAMP 410455800
@@ -19,6 +19,7 @@ const uint8_t WiDITH = 3;
 const uint8_t MODE[5] = {2, 8, 10, 16, 0};
 const uint8_t MODE_SIZE = 5;
 const uint8_t DEBOUNCE_DELAY_MS = 15;
+const uint8_t MENU_THRESSHOLD = 5;
 
 enum display_mode
 {
@@ -32,6 +33,7 @@ enum display_mode
 volatile uint32_t seconds = 0;
 volatile uint32_t base_timestamp = 0;
 volatile bool trigger_display_update = true;
+uint32_t menu_seconds = 0;
 
 uint8_t CURRENT_MODE_INDEX = 0;
 uint32_t offset = 0;
@@ -45,10 +47,21 @@ RTC_I2C rtc_i2c;
 MAX7219<12, 1, 5> mtrx;
 
 GButton change_mode(BUTTON_CHANGE_MODE_PIN);
+GButton set_btn(BUTTON_SET_PIN);
 
 void debug_output(const char *msg)
 {
-  Serial.println(msg);
+  if (DEBUG) Serial.println(msg);
+}
+
+void debug_output(int num)
+{
+  if (DEBUG) {
+    char *msg = (char*)calloc(12, sizeof(char));
+    sprintf(msg, "%d", num);
+    Serial.println(msg);
+    free(msg);
+  }
 }
 
 void debug_matrix_output(char *msg, double delay)
@@ -57,7 +70,7 @@ void debug_matrix_output(char *msg, double delay)
   mtrx.setCursor(0, 0);
   mtrx.print(msg);
   mtrx.update();
-  _delay_ms(delay);
+  if (delay != -1) _delay_ms(delay);
 }
 
 void graph_sin(uint8_t offset)
@@ -210,15 +223,24 @@ void rtc_interruption_handler()
 }
 
 /**
+ * Setup a button.
+*/
+void button_setup(GButton button,  uint16_t debounce, uint16_t timeout, uint16_t click_timeout, bool direction, bool type)
+{
+  button.setDebounce(50);
+  button.setTimeout(300);
+  button.setClickTimeout(600);
+  button.setDirection(NORM_OPEN);
+  button.setType(HIGH_PULL);
+}
+
+/**
  * Setup buttons.
  */
 void buttons_setup()
 {
-  change_mode.setDebounce(50);
-  change_mode.setTimeout(300);
-  change_mode.setClickTimeout(600);
-  change_mode.setDirection(NORM_OPEN);
-  change_mode.setType(HIGH_PULL);
+  button_setup(change_mode, 50, 300, 6000, NORM_OPEN, HIGH_PULL);
+  button_setup(set_btn, 50, 300, 6000, NORM_OPEN, HIGH_PULL);
 }
 
 /**
@@ -330,10 +352,91 @@ void print_datetime()
   Serial.println(date);
 }
 
+int8_t check_user_input(int8_t min, int8_t max, int8_t input) {
+  return (input < min) ? min : ((input > max ) ? max : input);
+}
+
+int8_t user_inupt(char *msg_template, int8_t min, int8_t max, int8_t current)
+{
+  debug_output("user input");
+  uint32_t menu_seconds = rtc.now().secondstime();
+  char *msg;
+  do
+  {
+    set_btn.resetStates();
+    change_mode.resetStates();
+
+    set_btn.tick();
+    change_mode.tick();
+
+    msg = (char*)calloc(12, sizeof(char));
+    sprintf(msg, msg_template, current);
+    debug_matrix_output(msg, -1);
+
+    if (set_btn.hasClicks()) {
+      current++;
+    }
+
+    if (change_mode.hasClicks()) {
+      current--;
+    }
+
+    current = check_user_input(min, max, current);
+    if (set_btn.hasClicks() || change_mode.hasClicks()) {
+      menu_seconds = rtc.now().secondstime();
+    }
+
+    free(msg);
+  } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
+  free(msg);
+
+  return current;
+}
+
+/**
+ * Setup base time and/or current time.
+*/
+void setup_menu(){
+  uint8_t timezone =  user_inupt("TZ UTC(%d)", -11, 12, 3);
+  char *msg = (char*)calloc(10, sizeof(char));
+  debug_output("TimeZone:");
+  debug_output(timezone);
+  // menu_seconds = rtc.now().secondstime();
+  // debug_matrix_output(">>> Setup", -1);
+  // do
+  // {
+  //   if (set_btn.hasClicks()) {
+  //     menu_seconds = rtc.now().secondstime();
+  //     // setup current time
+  //     debug_output("current time");
+  //     debug_matrix_output("Set current date", 3000);
+  //     DateTime current_datetime = rtc.now();
+  //     rtc.now().year 
+
+  //   } else if (change_mode.hasClicks()){
+  //     // setup begining
+  //     debug_output("begining");
+  //   }
+  // } while ((menu_seconds - rtc.now().secondstime()) < MENU_THRESSHOLD);
+}
+
+/**
+ * set_btn_action -> setup_menu -> user-input
+*/
+void set_btn_action() {
+  if (set_btn.isClick()) {
+    debug_output("set btn click");
+    setup_menu();
+  }
+}
+
+
 void loop()
 {
   change_mode.tick();
+  set_btn.tick();
 
   button_mode_action();
+  set_btn_action();
   display_update();
 }
