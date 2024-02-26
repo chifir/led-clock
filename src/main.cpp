@@ -2,8 +2,9 @@
 #include <Arduino.h>
 #include <RTClib.h>
 #include <GyverMAX7219.h>
-#include <GyverButton.h>
+#include <EncButton.h>
 #include <avr/eeprom.h>
+#include <UnixTime.h>
 
 #define DEBUG true
 #define CLOCK_INTERRUPT_PIN 2
@@ -12,6 +13,13 @@
 #define BASE_TIMESTAMP_COUNT_OFFSET 0
 #define BASE_TIMESTAMP_OFFSET 1
 #define BASE_DEFAULT_TIMESTAMP 410455800
+#define DEFAULT_TIMEZONE 3
+
+// button settings
+#define EB_DEB_TIME 50
+#define EB_CLICK_TIME 500
+#define EB_HOLD_TIME 600
+#define EB_STEP_TIME 200
 
 const uint8_t DISPLAY_WIDTH = 63;
 const uint8_t HEIGHT = 3;
@@ -34,6 +42,7 @@ volatile uint32_t seconds = 0;
 volatile uint32_t base_timestamp = 0;
 volatile bool trigger_display_update = true;
 uint32_t menu_seconds = 0;
+bool IS_BTNS_PRESSED = false;
 
 uint8_t CURRENT_MODE_INDEX = 0;
 uint32_t offset = 0;
@@ -46,18 +55,20 @@ RTC_I2C rtc_i2c;
 // 8 matrix in 1 row on D5
 MAX7219<12, 1, 5> mtrx;
 
-GButton change_mode(BUTTON_CHANGE_MODE_PIN);
-GButton set_btn(BUTTON_SET_PIN);
+Button change_mode(BUTTON_CHANGE_MODE_PIN, INPUT_PULLUP, LOW);
+Button set_btn(BUTTON_SET_PIN, INPUT_PULLUP, LOW);
 
 void debug_output(const char *msg)
 {
-  if (DEBUG) Serial.println(msg);
+  if (DEBUG)
+    Serial.println(msg);
 }
 
 void debug_output(int num)
 {
-  if (DEBUG) {
-    char *msg = (char*)calloc(12, sizeof(char));
+  if (DEBUG)
+  {
+    char *msg = (char *)calloc(12, sizeof(char));
     sprintf(msg, "%d", num);
     Serial.println(msg);
     free(msg);
@@ -70,7 +81,8 @@ void debug_matrix_output(char *msg, double delay)
   mtrx.setCursor(0, 0);
   mtrx.print(msg);
   mtrx.update();
-  if (delay != -1) _delay_ms(delay);
+  if (delay != -1)
+    _delay_ms(delay);
 }
 
 void graph_sin(uint8_t offset)
@@ -223,27 +235,6 @@ void rtc_interruption_handler()
 }
 
 /**
- * Setup a button.
-*/
-void button_setup(GButton button,  uint16_t debounce, uint16_t timeout, uint16_t click_timeout, bool direction, bool type)
-{
-  button.setDebounce(50);
-  button.setTimeout(300);
-  button.setClickTimeout(600);
-  button.setDirection(NORM_OPEN);
-  button.setType(HIGH_PULL);
-}
-
-/**
- * Setup buttons.
- */
-void buttons_setup()
-{
-  button_setup(change_mode, 50, 300, 6000, NORM_OPEN, HIGH_PULL);
-  button_setup(set_btn, 50, 300, 6000, NORM_OPEN, HIGH_PULL);
-}
-
-/**
  * Setup DS3231:
  * - connect
  * - setup time if power lost
@@ -298,33 +289,37 @@ void display_setup()
   mtrx.update();
 }
 
-byte get_count() {
+byte get_count()
+{
   return eeprom_read_byte(BASE_TIMESTAMP_COUNT_OFFSET);
 }
 
-uint32_t get_base_timestamp(byte index) {
+uint32_t get_base_timestamp(byte index)
+{
   return eeprom_read_dword((const uint32_t *)(1 + 4 * index));
 }
 
-void update_base_timestamp(byte index, uint32_t baseTimestamp) {
+void update_base_timestamp(byte index, uint32_t baseTimestamp)
+{
   eeprom_update_dword((uint32_t *)(1 + 4 * index), baseTimestamp);
 }
 
 /**
  * Writes default base timestamp in EEPROM, if it wasn't set previously.
  * Reads base timestamp from EEPROM.
-*/
-void setup_eeprom() {
+ */
+void setup_eeprom()
+{
   Serial.println(get_count());
   Serial.print("#EEPROM default value: ");
   base_timestamp = get_base_timestamp(0);
   Serial.print(base_timestamp);
-  if (~base_timestamp == 0) {
+  if (~base_timestamp == 0)
+  {
     debug_output("base wasn't set");
     update_base_timestamp(0, BASE_DEFAULT_TIMESTAMP);
     base_timestamp = get_base_timestamp(0);
   }
-
 }
 
 void setup()
@@ -337,8 +332,6 @@ void setup()
   debug_output("start setup");
   debug_output("display setup");
   display_setup();
-  debug_output("button setup");
-  buttons_setup();
   debug_output("rtc setup");
   rtc_setup();
   debug_output("EEPROM setup");
@@ -352,84 +345,125 @@ void print_datetime()
   Serial.println(date);
 }
 
-int8_t check_user_input(int8_t min, int8_t max, int8_t input) {
-  return (input < min) ? min : ((input > max ) ? max : input);
+/**
+ * Check leap year
+ */
+bool is_leap_year(int year)
+{
+  return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
 }
 
-int8_t user_inupt(char *msg_template, int8_t min, int8_t max, int8_t current)
+/**
+ * Get max days in monty
+ */
+uint8_t get_days_in_month(uint8_t month, uint16_t year)
+{
+  const uint8_t days_in_month[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+  if (month == 2 && is_leap_year(year))
+  {
+    return days_in_month[month - 1] + 1;
+  }
+
+  return days_in_month[month - 1];
+}
+
+/**
+ * Checks user input, min and max are range boundaries, included.
+ * If user input is not in the range, min or max is returned.
+ */
+int16_t check_user_input(int16_t min, int16_t max, int16_t input)
+{
+  return (input < min) ? min : ((input > max) ? max : input);
+}
+
+/**
+ * Enter a value.
+ */
+int16_t user_inupt(char *msg_template, int16_t min, int16_t max, int16_t current)
 {
   debug_output("user input");
-  uint32_t menu_seconds = rtc.now().secondstime();
+  menu_seconds = rtc.now().secondstime();
   char *msg;
   do
   {
-    set_btn.resetStates();
-    change_mode.resetStates();
-
     set_btn.tick();
     change_mode.tick();
 
-    msg = (char*)calloc(12, sizeof(char));
+    msg = (char *)calloc(12, sizeof(char));
     sprintf(msg, msg_template, current);
     debug_matrix_output(msg, -1);
 
-    if (set_btn.hasClicks()) {
-      current++;
+    if (set_btn.hasClicks()) 
+    {
+      current = current + set_btn.getClicks();
+    } else if (change_mode.hasClicks())
+    {
+      current = current - change_mode.getClicks();
     }
 
-    if (change_mode.hasClicks()) {
-      current--;
+    if (set_btn.hasClicks() || change_mode.hasClicks())
+    {
+      menu_seconds = rtc.now().secondstime();
     }
 
     current = check_user_input(min, max, current);
-    if (set_btn.hasClicks() || change_mode.hasClicks()) {
-      menu_seconds = rtc.now().secondstime();
-    }
 
     free(msg);
   } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
   free(msg);
-
+  menu_seconds = rtc.now().secondstime();
   return current;
 }
 
 /**
- * Setup base time and/or current time.
-*/
-void setup_menu(){
-  uint8_t timezone =  user_inupt("TZ UTC(%d)", -11, 12, 3);
-  char *msg = (char*)calloc(10, sizeof(char));
-  debug_output("TimeZone:");
-  debug_output(timezone);
-  // menu_seconds = rtc.now().secondstime();
-  // debug_matrix_output(">>> Setup", -1);
-  // do
-  // {
-  //   if (set_btn.hasClicks()) {
-  //     menu_seconds = rtc.now().secondstime();
-  //     // setup current time
-  //     debug_output("current time");
-  //     debug_matrix_output("Set current date", 3000);
-  //     DateTime current_datetime = rtc.now();
-  //     rtc.now().year 
+ * Converts user input into unixtime object.
+ */
+UnixTime user_input_unix_time()
+{
+  DateTime current_date_time = rtc.now();
+  debug_output("get_unix_time");
+  uint32_t menu_seconds = rtc.now().secondstime();
+  do
+  {
+    int8_t utc_time_zone = (int8_t)user_inupt("TZ GMT(%d)", -11, 12, (int16_t)DEFAULT_TIMEZONE);
+    uint16_t year = (uint16_t)user_inupt("YEAR: %d", 1970, 2099, (int16_t)current_date_time.year());
+    uint8_t month = (uint8_t)user_inupt("MONTH: %d", 1, 12, (int16_t)current_date_time.month());
+    uint8_t max_day = (uint8_t)get_days_in_month(month, year);
+    uint8_t day = (uint8_t)user_inupt("DAY: %d", 1, max_day, (int16_t)current_date_time.day());
+    uint8_t hour = (uint8_t)user_inupt("HOUR: %d", 0, 23, (int16_t)current_date_time.hour());
+    uint8_t minute = (uint8_t)user_inupt("MINUTE: %d", 0, 59, (int16_t)current_date_time.minute());
 
-  //   } else if (change_mode.hasClicks()){
-  //     // setup begining
-  //     debug_output("begining");
-  //   }
-  // } while ((menu_seconds - rtc.now().secondstime()) < MENU_THRESSHOLD);
+    UnixTime unix_time(utc_time_zone);
+    unix_time.setDateTime(year, month, day, hour, minute, 0);
+
+    return unix_time;
+  } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
+
+  return NULL;
 }
 
 /**
- * set_btn_action -> setup_menu -> user-input
-*/
-void set_btn_action() {
-  if (set_btn.isClick()) {
+ * Setup base time and/or current time.
+ */
+void setup_menu()
+{
+  menu_seconds = rtc.now().secondstime();
+  debug_matrix_output(">>> Setup", -1);
+  UnixTime user_inupt = user_input_unix_time();
+}
+
+/**
+ * set_btn_action -> setup_menu -> choose_option -> user_input_unix_time -> user_input
+ */
+void set_btn_action()
+{
+  if (set_btn.hasClicks())
+  {
     debug_output("set btn click");
     setup_menu();
   }
 }
-
 
 void loop()
 {
