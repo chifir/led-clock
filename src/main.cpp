@@ -10,7 +10,7 @@
 #define CLOCK_INTERRUPT_PIN 2
 #define BUTTON_CHANGE_MODE_PIN 6
 #define BUTTON_SET_PIN 7
-#define BASE_TIMESTAMP_COUNT_OFFSET 0
+#define EEPROM_GMT_OFFSET 0
 #define BASE_TIMESTAMP_OFFSET 1
 #define BASE_DEFAULT_TIMESTAMP 410455800
 #define DEFAULT_TIMEZONE 0
@@ -33,6 +33,13 @@ const uint8_t MODE_SIZE = 5;
 const uint8_t DEBOUNCE_DELAY_MS = 15;
 const uint8_t MENU_THRESSHOLD = 5;
 
+const char* USER_INPUT_TZ_UTC = "TZ UTC(%d)";
+const char* USER_INPUT_YEAR = "YEAR: %d";
+const char* USER_INPUT_MONTH = "MONTH: %d";
+const char* USER_INPUT_DAY = "DAY: %d";
+const char* USER_INPUT_HOUR = "HOUR: %d";
+const char* USER_INPUT_MINUTE = "MINUTE: %d";
+
 enum display_mode
 {
   bin = 2,
@@ -45,6 +52,7 @@ enum display_mode
 volatile uint32_t seconds = 0;
 volatile uint32_t recovery_base_timestamp = 0;
 volatile uint32_t recovery_timestamp = 0;
+volatile int8_t current_timezone = 3;
 volatile bool trigger_display_update = true;
 uint32_t menu_seconds = 0;
 bool IS_BTNS_PRESSED = false;
@@ -90,22 +98,45 @@ void debug_matrix_output(char *msg, double delay)
     _delay_ms(delay);
 }
 
-byte get_gmt()
+/**
+ * Reads GMT from eeprom
+*/
+int8_t get_gmt()
 {
-  return eeprom_read_byte(BASE_TIMESTAMP_COUNT_OFFSET);
+  return (int8_t) eeprom_read_byte(EEPROM_GMT_OFFSET);
 }
 
+/**
+ * Writes GMT to eeprom
+*/
+void update_gmt(int8_t gmt) 
+{
+  eeprom_update_byte(EEPROM_GMT_OFFSET, gmt);
+}
+
+/**
+ * Reads timestamp(4 bytes) from eeprom by index:
+ * 0 - base timestamp
+ * 1 - clock timestamp (just for recovering)
+*/
 uint32_t get_eeprom_timestamp(byte index)
 {
   return eeprom_read_dword((const uint32_t *)(1 + 4 * index));
 }
 
+/**
+ * Wtites timestamp(4 bytes) to eeprom by index:
+ * 0 - base timestamp
+ * 1 - clock timestamp (just for recovering)
+*/
 void update_eeprom_timestamp(byte index, uint32_t baseTimestamp)
 {
   eeprom_update_dword((uint32_t *)(1 + 4 * index), baseTimestamp);
 }
 
-
+/**
+ * Just for fun, writes a sinux graph on the display
+*/
 void graph_sin(uint8_t offset)
 {
   uint8_t x = 0;
@@ -121,6 +152,9 @@ void graph_sin(uint8_t offset)
   mtrx.update();
 }
 
+/**
+ * Converts DateTime to UnixTime.
+*/
 UnixTime date_time_to_unix_time(int8_t gmt, DateTime date_time) 
 {
   UnixTime unix_time(gmt);
@@ -128,6 +162,9 @@ UnixTime date_time_to_unix_time(int8_t gmt, DateTime date_time)
   return unix_time;
 }
 
+/**
+ * Converts UnixtTime to DateTime
+*/
 DateTime unix_time_to_date_time(UnixTime time)
 {
   DateTime dateTime(time.getUnix());
@@ -333,17 +370,16 @@ void display_setup()
  * Writes default base timestamp in EEPROM, if it wasn't set previously.
  * Reads base timestamp from EEPROM.
  */
-void setup_eeprom()
+void setup_from_eeprom()
 {
-  Serial.println(get_gmt());
-  Serial.print("#EEPROM default value: ");
+  current_timezone = get_gmt();
   recovery_base_timestamp = get_eeprom_timestamp(0);
-  Serial.print(recovery_base_timestamp);
+  recovery_timestamp = get_eeprom_timestamp(1);
   if (~recovery_base_timestamp == 0)
   {
     debug_output("base wasn't set");
     update_eeprom_timestamp(0, BASE_DEFAULT_TIMESTAMP);
-    recovery_base_timestamp = get_eeprom_timestamp(0);
+    recovery_base_timestamp = BASE_DEFAULT_TIMESTAMP;
   }
 }
 
@@ -354,13 +390,13 @@ void setup()
     Serial.begin(9800);
   }
 
+  debug_output("EEPROM setup");
+  setup_from_eeprom();
   debug_output("start setup");
   debug_output("display setup");
   display_setup();
   debug_output("rtc setup");
   rtc_setup();
-  debug_output("EEPROM setup");
-  setup_eeprom();
 }
 
 void print_datetime()
@@ -405,7 +441,7 @@ int16_t check_user_input(int16_t min, int16_t max, int16_t input)
 /**
  * Enter a value.
  */
-int16_t user_inupt(char *msg_template, int16_t min, int16_t max, int16_t current)
+int16_t user_inupt(const char *msg_template, int16_t min, int16_t max, int16_t current)
 {
   debug_output("user input");
   menu_seconds = rtc.now().secondstime();
@@ -448,21 +484,20 @@ int16_t user_inupt(char *msg_template, int16_t min, int16_t max, int16_t current
 UnixTime user_input_unix_time(UnixTime unix_time)
 {
   debug_output("user_input_unix_time");
-
   uint32_t menu_seconds = rtc.now().secondstime();
   do
   {
-    int8_t utc_time_zone = (int8_t)user_inupt("TZ UTC(%d)", -11, 12, (int16_t)DEFAULT_TIMEZONE);
-    uint16_t year = (uint16_t)user_inupt("YEAR: %d", 1970, 2099, (int16_t)unix_time.year);
-    uint8_t month = (uint8_t)user_inupt("MONTH: %d", 1, 12, (int16_t)unix_time.month);
+    int8_t utc_time_zone = (int8_t)user_inupt(USER_INPUT_TZ_UTC, -11, 12, (int16_t)current_timezone);
+    uint16_t year = (uint16_t)user_inupt(USER_INPUT_YEAR, 1970, 2099, (int16_t)unix_time.year);
+    uint8_t month = (uint8_t)user_inupt(USER_INPUT_MONTH, 1, 12, (int16_t)unix_time.month);
     uint8_t max_day = (uint8_t)get_days_in_month(month, year);
-    uint8_t day = (uint8_t)user_inupt("DAY: %d", 1, max_day, (int16_t)unix_time.day);
-    uint8_t hour = (uint8_t)user_inupt("HOUR: %d", 0, 23, (int16_t)unix_time.hour);
-    uint8_t minute = (uint8_t)user_inupt("MINUTE: %d", 0, 59, (int16_t)unix_time.minute);
+    uint8_t day = (uint8_t)user_inupt(USER_INPUT_DAY, 1, max_day, (int16_t)unix_time.day);
+    uint8_t hour = (uint8_t)user_inupt(USER_INPUT_HOUR, 0, 23, (int16_t)unix_time.hour);
+    uint8_t minute = (uint8_t)user_inupt(USER_INPUT_MINUTE, 0, 59, (int16_t)unix_time.minute);
 
     UnixTime unix_time(utc_time_zone);
     unix_time.setDateTime(year, month, day, hour, minute, 0);
-
+    debug_output  
     return unix_time;
   } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
 
@@ -472,8 +507,12 @@ UnixTime user_input_unix_time(UnixTime unix_time)
 void set_current_time() 
 {
   UnixTime current_time = date_time_to_unix_time(DEFAULT_TIMEZONE, rtc.now());
-  UnixTime user_input_time = user_input_unix_time(current_time);
-  rtc.adjust(unix_time_to_date_time(user_input_time));
+
+  UnixTime current_time = user_input_unix_time(current_time);
+  // udpate eeprom for recovery
+  update_eeprom_timestamp(1, current_time.getUnix());
+  // update rtc clock 
+  rtc.adjust(unix_time_to_date_time(current_time));
 }
 
 void set_epoch_time()
@@ -502,7 +541,6 @@ void menu_action(uint8_t option)
     break;
   }
 }
-
 
 /**
  * Setup base time and/or current time.
