@@ -11,9 +11,10 @@
 #define BUTTON_CHANGE_MODE_PIN 6
 #define BUTTON_SET_PIN 7
 #define EEPROM_GMT_OFFSET 0
-#define BASE_TIMESTAMP_OFFSET 1
-#define BASE_DEFAULT_TIMESTAMP 410455800
-#define DEFAULT_TIMEZONE 0
+#define EPOCH_BEGIN_OFFSET 0
+#define CLOCK_OFFSET 1
+#define EPOCH_BEGIN 410455800
+#define DEFAULT_TIMEZONE 3
 
 // button settings
 #define EB_DEB_TIME 50
@@ -50,9 +51,9 @@ enum display_mode
 };
 
 volatile uint32_t seconds = 0;
-volatile uint32_t recovery_base_timestamp = 0;
-volatile uint32_t recovery_timestamp = 0;
-volatile int8_t current_timezone = 3;
+volatile uint32_t recovery_epoch_begin_timestamp = 0;
+volatile uint32_t recovery_clock_timestamp = 0;
+volatile int8_t current_timezone = 0;
 volatile bool trigger_display_update = true;
 uint32_t menu_seconds = 0;
 bool IS_BTNS_PRESSED = false;
@@ -101,7 +102,7 @@ void debug_matrix_output(char *msg, double delay)
 /**
  * Reads GMT from eeprom
 */
-int8_t get_gmt()
+int8_t get_timezone()
 {
   return (int8_t) eeprom_read_byte(EEPROM_GMT_OFFSET);
 }
@@ -173,7 +174,7 @@ DateTime unix_time_to_date_time(UnixTime time)
 
 uint32_t unix_time_to_epoch_time(UnixTime unix_time)
 {
-  return unix_time.getUnix() - recovery_base_timestamp;
+  return unix_time.getUnix() - recovery_epoch_begin_timestamp;
 }
 
 /**
@@ -268,7 +269,7 @@ void display_update()
   if (trigger_display_update)
   {
     DateTime now = rtc.now();
-    UnixTime unix_time = date_time_to_unix_time(DEFAULT_TIMEZONE, now);
+    UnixTime unix_time = date_time_to_unix_time(current_timezone, now);
     display_time(unix_time_to_epoch_time(unix_time), MODE[CURRENT_MODE_INDEX]);
     trigger_display_update = false;
   }
@@ -355,8 +356,6 @@ void rtc_setup()
 
   // start oscilaating at SQW with 1Hz
   rtc.writeSqwPinMode(DS3231_SquareWave1Hz);
-
-  CURRENT_MODE_INDEX = 1;
 }
 
 void display_setup()
@@ -372,14 +371,23 @@ void display_setup()
  */
 void setup_from_eeprom()
 {
-  current_timezone = get_gmt();
-  recovery_base_timestamp = get_eeprom_timestamp(0);
-  recovery_timestamp = get_eeprom_timestamp(1);
-  if (~recovery_base_timestamp == 0)
+  // read timezone
+  current_timezone = get_timezone();
+  if (~current_timezone == 0)
   {
-    debug_output("base wasn't set");
-    update_eeprom_timestamp(0, BASE_DEFAULT_TIMESTAMP);
-    recovery_base_timestamp = BASE_DEFAULT_TIMESTAMP;
+    debug_output("timezone wasn't set");
+    update_gmt(DEFAULT_TIMEZONE);
+    current_timezone = EPOCH_BEGIN;
+  }
+  // read timestamp for clock
+  recovery_clock_timestamp = get_eeprom_timestamp(CLOCK_OFFSET);
+  // read and set epoch begining timestamp
+  recovery_epoch_begin_timestamp = get_eeprom_timestamp(EPOCH_BEGIN_OFFSET);
+  if (~recovery_epoch_begin_timestamp == 0)
+  {
+    debug_output("begining wasn't set");
+    update_eeprom_timestamp(0, EPOCH_BEGIN);
+    recovery_epoch_begin_timestamp = EPOCH_BEGIN;
   }
 }
 
@@ -397,8 +405,11 @@ void setup()
   display_setup();
   debug_output("rtc setup");
   rtc_setup();
+
+  CURRENT_MODE_INDEX = 1;
 }
 
+//TODO: delete
 void print_datetime()
 {
   char date[14] = "YYYY:hh:mm:ss";
@@ -473,6 +484,7 @@ int16_t user_inupt(const char *msg_template, int16_t min, int16_t max, int16_t c
 
     free(msg);
   } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
+  debug_output(current);
   free(msg);
   menu_seconds = rtc.now().secondstime();
   return current;
@@ -497,7 +509,6 @@ UnixTime user_input_unix_time(UnixTime unix_time)
 
     UnixTime unix_time(utc_time_zone);
     unix_time.setDateTime(year, month, day, hour, minute, 0);
-    debug_output  
     return unix_time;
   } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
 
@@ -506,18 +517,29 @@ UnixTime user_input_unix_time(UnixTime unix_time)
 
 void set_current_time() 
 {
-  UnixTime current_time = date_time_to_unix_time(DEFAULT_TIMEZONE, rtc.now());
-
-  UnixTime current_time = user_input_unix_time(current_time);
+  // convert to unix
+  UnixTime current_time = date_time_to_unix_time(current_timezone, rtc.now());
+  // get time from user
+  current_time = user_input_unix_time(current_time);
+  if (current_time == NULL) return;
   // udpate eeprom for recovery
-  update_eeprom_timestamp(1, current_time.getUnix());
+  update_eeprom_timestamp(CLOCK_OFFSET, current_time.getUnix());
   // update rtc clock 
   rtc.adjust(unix_time_to_date_time(current_time));
 }
 
 void set_epoch_time()
 {
-
+  // convert to unix
+  UnixTime current_time(current_timezone);
+  current_time.getDateTime(rtc.now().unixtime());
+  // get time from user
+  current_time = user_input_unix_time(current_time);
+  if (current_time == NULL) return;
+  // udpate eeprom for recovery
+  update_eeprom_timestamp(CLOCK_OFFSET, current_time.getUnix());
+  // update rtc clock 
+  rtc.adjust(unix_time_to_date_time(current_time));
 }
 
 void menu_action(uint8_t option)
