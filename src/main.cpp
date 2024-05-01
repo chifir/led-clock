@@ -13,7 +13,7 @@
 #define EEPROM_GMT_OFFSET 0
 #define EPOCH_BEGIN_OFFSET 0
 #define CLOCK_OFFSET 1
-#define EPOCH_BEGIN 410455800
+#define EPOCH_BEGIN 536229000
 #define DEFAULT_TIMEZONE 3
 
 // button settings
@@ -76,6 +76,28 @@ void debug_output(const char *msg)
 {
   if (DEBUG)
     Serial.println(msg);
+}
+
+void debug_output(uint32_t num)
+{
+  if (DEBUG)
+  {
+    char *msg = (char *)calloc(12, sizeof(char));
+    sprintf(msg, "%d", num);
+    Serial.println(msg);
+    free(msg);
+  }
+}
+
+void debug_output(uint16_t num)
+{
+  if (DEBUG)
+  {
+    char *msg = (char *)calloc(20, sizeof(char));
+    sprintf(msg, "%d", num);
+    Serial.println(msg);
+    free(msg);
+  }
 }
 
 void debug_output(int num)
@@ -250,7 +272,7 @@ void display_time(uint32_t time_to_display, uint8_t mode)
   // only for dev and debug
   case display_mode::str:
   {
-    char date[9] = "hh:mm:ss";
+    char date[17] = "YYYY:MM:DD:hh:mm";
     rtc.now().toString(date);
     mtrx.print(date);
   }
@@ -268,10 +290,10 @@ void display_update()
 {
   if (trigger_display_update)
   {
+    trigger_display_update = false;
     DateTime now = rtc.now();
     UnixTime unix_time = date_time_to_unix_time(current_timezone, now);
     display_time(unix_time_to_epoch_time(unix_time), MODE[CURRENT_MODE_INDEX]);
-    trigger_display_update = false;
   }
 }
 
@@ -371,13 +393,15 @@ void display_setup()
  */
 void setup_from_eeprom()
 {
+  update_eeprom_timestamp(0, EPOCH_BEGIN);
+  
   // read timezone
   current_timezone = get_timezone();
   if (~current_timezone == 0)
   {
     debug_output("timezone wasn't set");
     update_gmt(DEFAULT_TIMEZONE);
-    current_timezone = EPOCH_BEGIN;
+    current_timezone = DEFAULT_TIMEZONE;
   }
   // read timestamp for clock
   recovery_clock_timestamp = get_eeprom_timestamp(CLOCK_OFFSET);
@@ -388,6 +412,37 @@ void setup_from_eeprom()
     debug_output("begining wasn't set");
     update_eeprom_timestamp(0, EPOCH_BEGIN);
     recovery_epoch_begin_timestamp = EPOCH_BEGIN;
+  }
+}
+
+void dislpay_timestamps() 
+{
+  debug_output("EPOCH:");
+  Serial.println(get_eeprom_timestamp(EPOCH_BEGIN_OFFSET));
+  debug_output("CLOCK");
+  Serial.println(get_eeprom_timestamp(CLOCK_OFFSET));
+}
+
+void serial_setup() 
+{
+  if (change_mode.holding())
+  {
+    //debug_output("serial_setup_start");
+    while(Serial.available()) 
+    {
+      Serial.println("Serial setup");
+      String input = Serial.readString();
+      Serial.println(input);
+      if (input.equals("b")) 
+      {
+        break;
+      }
+    }
+    //debug_output("serial_setup_end");
+  }
+  else 
+  {
+    return;
   }
 }
 
@@ -405,8 +460,10 @@ void setup()
   display_setup();
   debug_output("rtc setup");
   rtc_setup();
+  dislpay_timestamps();
+  CURRENT_MODE_INDEX = 4;
 
-  CURRENT_MODE_INDEX = 1;
+  serial_setup();
 }
 
 //TODO: delete
@@ -459,6 +516,8 @@ int16_t user_inupt(const char *msg_template, int16_t min, int16_t max, int16_t c
   char *msg;
   do
   {
+    set_btn.clear();
+    change_mode.clear();
     set_btn.tick();
     change_mode.tick();
 
@@ -466,13 +525,9 @@ int16_t user_inupt(const char *msg_template, int16_t min, int16_t max, int16_t c
     sprintf(msg, msg_template, current);
     debug_matrix_output(msg, -1);
 
-    if (set_btn.hasClicks())
+    if (set_btn.hasClicks() || change_mode.hasClicks())
     {
-      current = current + set_btn.getClicks();
-    }
-    else if (change_mode.hasClicks())
-    {
-      current = current - change_mode.getClicks();
+      current = current + set_btn.getClicks() - change_mode.getClicks();
     }
 
     if (set_btn.hasClicks() || change_mode.hasClicks())
@@ -486,60 +541,81 @@ int16_t user_inupt(const char *msg_template, int16_t min, int16_t max, int16_t c
   } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
   debug_output(current);
   free(msg);
-  menu_seconds = rtc.now().secondstime();
   return current;
 }
 
 /**
  * Get and converts user input into unixtime object.
  */
-UnixTime user_input_unix_time(UnixTime unix_time)
+UnixTime user_input_unix_time(UnixTime src_time, int8_t src_time_zone)
 {
   debug_output("user_input_unix_time");
-  uint32_t menu_seconds = rtc.now().secondstime();
   do
   {
-    int8_t utc_time_zone = (int8_t)user_inupt(USER_INPUT_TZ_UTC, -11, 12, (int16_t)current_timezone);
-    uint16_t year = (uint16_t)user_inupt(USER_INPUT_YEAR, 1970, 2099, (int16_t)unix_time.year);
-    uint8_t month = (uint8_t)user_inupt(USER_INPUT_MONTH, 1, 12, (int16_t)unix_time.month);
+    int8_t time_zone = (int8_t)user_inupt(USER_INPUT_TZ_UTC, -11, 12, (int16_t)src_time_zone);
+    uint16_t year = (uint16_t)user_inupt(USER_INPUT_YEAR, 1970, 2099, (int16_t)src_time.year);
+    uint8_t month = (uint8_t)user_inupt(USER_INPUT_MONTH, 1, 12, (int16_t)src_time.month);
     uint8_t max_day = (uint8_t)get_days_in_month(month, year);
-    uint8_t day = (uint8_t)user_inupt(USER_INPUT_DAY, 1, max_day, (int16_t)unix_time.day);
-    uint8_t hour = (uint8_t)user_inupt(USER_INPUT_HOUR, 0, 23, (int16_t)unix_time.hour);
-    uint8_t minute = (uint8_t)user_inupt(USER_INPUT_MINUTE, 0, 59, (int16_t)unix_time.minute);
+    uint8_t day = (uint8_t)user_inupt(USER_INPUT_DAY, 1, max_day, (int16_t)src_time.day);
+    uint8_t hour = (uint8_t)user_inupt(USER_INPUT_HOUR, 0, 23, (int16_t)src_time.hour);
+    uint8_t minute = (uint8_t)user_inupt(USER_INPUT_MINUTE, 0, 59, (int16_t)src_time.minute);
 
-    UnixTime unix_time(utc_time_zone);
+    current_timezone = time_zone;
+    UnixTime unix_time(time_zone);
     unix_time.setDateTime(year, month, day, hour, minute, 0);
     return unix_time;
-  } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
+  } while (true);
 
-  return NULL;
+  return src_time;
 }
+
 
 void set_current_time() 
 {
+  debug_output("set_current_time start");
   // convert to unix
-  UnixTime current_time = date_time_to_unix_time(current_timezone, rtc.now());
+  debug_output("get rtc.now() for converting into ");
+  DateTime now = rtc.now();
+  debug_output("convert to unix");
+  UnixTime current_time = date_time_to_unix_time(current_timezone, now);
   // get time from user
-  current_time = user_input_unix_time(current_time);
-  if (current_time == NULL) return;
+  current_time = user_input_unix_time(current_time, current_timezone);
   // udpate eeprom for recovery
   update_eeprom_timestamp(CLOCK_OFFSET, current_time.getUnix());
   // update rtc clock 
   rtc.adjust(unix_time_to_date_time(current_time));
+
+  dislpay_timestamps();
+}
+
+void debug_output_unixtimestamp(UnixTime unix_time)
+{
+  // debug_output(unix_time.year);
+  debug_output(unix_time.month);
+  debug_output(unix_time.day);
+  debug_output(unix_time.hour);
+  debug_output(unix_time.minute);
+  // char *msg = (char *)calloc(32, sizeof(char));
+  // sprintf(msg, "%d:%d:%d:%d", unix_time.year, unix_time.month, unix_time.hour, unix_time.minute);
+  // Serial.println(msg);
+  // free(msg);
 }
 
 void set_epoch_time()
 {
-  // convert to unix
-  UnixTime current_time(current_timezone);
-  current_time.getDateTime(rtc.now().unixtime());
+  dislpay_timestamps();
+  UnixTime epoch_start(current_timezone);
+  epoch_start.getDateTime(get_eeprom_timestamp(EPOCH_BEGIN_OFFSET));
+  debug_output("before");
+  debug_output_unixtimestamp(epoch_start);
   // get time from user
-  current_time = user_input_unix_time(current_time);
-  if (current_time == NULL) return;
+  UnixTime user_epoch_start = user_input_unix_time(epoch_start, current_timezone);
+  debug_output("after");
+  Serial.println(user_epoch_start.getUnix());
+  debug_output_unixtimestamp(user_epoch_start);
   // udpate eeprom for recovery
-  update_eeprom_timestamp(CLOCK_OFFSET, current_time.getUnix());
-  // update rtc clock 
-  rtc.adjust(unix_time_to_date_time(current_time));
+  update_eeprom_timestamp(EPOCH_BEGIN_OFFSET, user_epoch_start.getUnix());
+  dislpay_timestamps();
 }
 
 void menu_action(uint8_t option)
@@ -606,9 +682,11 @@ void set_btn_action()
 
 void loop()
 {
+  change_mode.clear();
+  set_btn.clear();
   change_mode.tick();
   set_btn.tick();
-
+  serial_setup();
   button_mode_action();
   set_btn_action();
   display_update();
