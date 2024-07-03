@@ -121,6 +121,16 @@ void debug_matrix_output(char *msg, double delay)
     _delay_ms(delay);
 }
 
+void debug_matrix_output(String msg, double delay)
+{
+  mtrx.clear();
+  mtrx.setCursor(0, 0);
+  mtrx.print(msg);
+  mtrx.update();
+  if (delay != -1)
+    _delay_ms(delay);
+}
+
 /**
  * Reads GMT from eeprom
 */
@@ -423,57 +433,6 @@ void dislpay_timestamps()
   Serial.println(get_eeprom_timestamp(CLOCK_OFFSET));
 }
 
-void serial_setup() 
-{
-  if (change_mode.holding())
-  {
-    //debug_output("serial_setup_start");
-    while(Serial.available()) 
-    {
-      Serial.println("Serial setup");
-      String input = Serial.readString();
-      Serial.println(input);
-      if (input.equals("b")) 
-      {
-        break;
-      }
-    }
-    //debug_output("serial_setup_end");
-  }
-  else 
-  {
-    return;
-  }
-}
-
-void setup()
-{
-  if (DEBUG)
-  {
-    Serial.begin(9800);
-  }
-
-  debug_output("EEPROM setup");
-  setup_from_eeprom();
-  debug_output("start setup");
-  debug_output("display setup");
-  display_setup();
-  debug_output("rtc setup");
-  rtc_setup();
-  dislpay_timestamps();
-  CURRENT_MODE_INDEX = 4;
-
-  serial_setup();
-}
-
-//TODO: delete
-void print_datetime()
-{
-  char date[14] = "YYYY:hh:mm:ss";
-  rtc.now().toString(date);
-  Serial.println(date);
-}
-
 /**
  * Check leap year
  */
@@ -640,6 +599,7 @@ void menu_action(uint8_t option)
   }
 }
 
+
 /**
  * Setup base time and/or current time.
  */
@@ -680,13 +640,30 @@ void set_btn_action()
   }
 }
 
+void setup()
+{
+  if (DEBUG)
+  {
+    Serial.begin(9800);
+  }
+
+  debug_output("EEPROM setup");
+  setup_from_eeprom();
+  debug_output("start setup");
+  debug_output("display setup");
+  display_setup();
+  debug_output("rtc setup");
+  rtc_setup();
+  dislpay_timestamps();
+  CURRENT_MODE_INDEX = 4;
+}
+
 void loop()
 {
   change_mode.clear();
   set_btn.clear();
   change_mode.tick();
   set_btn.tick();
-  serial_setup();
   button_mode_action();
   set_btn_action();
   display_update();
