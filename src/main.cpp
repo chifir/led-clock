@@ -5,6 +5,8 @@
 #include <EncButton.h>
 #include <avr/eeprom.h>
 #include <UnixTime.h>
+#include "debug_output.h"
+#include "matrix_display.h"
 
 #define DEBUG true
 #define CLOCK_INTERRUPT_PIN 2
@@ -26,9 +28,6 @@
 #define SET_CURRENT_TIME 1
 #define SET_EPOCH_TIME 2
 
-const uint8_t DISPLAY_WIDTH = 63;
-const uint8_t HEIGHT = 3;
-const uint8_t WiDITH = 3;
 const uint8_t MODE[5] = {2, 8, 10, 16, 0};
 const uint8_t MODE_SIZE = 5;
 const uint8_t DEBOUNCE_DELAY_MS = 15;
@@ -40,15 +39,6 @@ const char* USER_INPUT_MONTH = "MONTH: %d";
 const char* USER_INPUT_DAY = "DAY: %d";
 const char* USER_INPUT_HOUR = "HOUR: %d";
 const char* USER_INPUT_MINUTE = "MINUTE: %d";
-
-enum display_mode
-{
-  bin = 2,
-  oct = 8,
-  dec = 10,
-  hex = 16,
-  str = 0
-};
 
 volatile uint32_t seconds = 0;
 volatile uint32_t recovery_epoch_begin_timestamp = 0;
@@ -67,69 +57,10 @@ RTC_DS3231 rtc;
 RTC_I2C rtc_i2c;
 
 // 8 matrix in 1 row on D5
-MAX7219<12, 1, 5> mtrx;
+// MAX7219<12, 1, 5> mtrx;
 
 Button change_mode(BUTTON_CHANGE_MODE_PIN, INPUT_PULLUP, LOW);
 Button set_btn(BUTTON_SET_PIN, INPUT_PULLUP, LOW);
-
-void debug_output(const char *msg)
-{
-  if (DEBUG)
-    Serial.println(msg);
-}
-
-void debug_output(uint32_t num)
-{
-  if (DEBUG)
-  {
-    char *msg = (char *)calloc(12, sizeof(char));
-    sprintf(msg, "%d", num);
-    Serial.println(msg);
-    free(msg);
-  }
-}
-
-void debug_output(uint16_t num)
-{
-  if (DEBUG)
-  {
-    char *msg = (char *)calloc(20, sizeof(char));
-    sprintf(msg, "%d", num);
-    Serial.println(msg);
-    free(msg);
-  }
-}
-
-void debug_output(int num)
-{
-  if (DEBUG)
-  {
-    char *msg = (char *)calloc(12, sizeof(char));
-    sprintf(msg, "%d", num);
-    Serial.println(msg);
-    free(msg);
-  }
-}
-
-void debug_matrix_output(char *msg, double delay)
-{
-  mtrx.clear();
-  mtrx.setCursor(0, 0);
-  mtrx.print(msg);
-  mtrx.update();
-  if (delay != -1)
-    _delay_ms(delay);
-}
-
-void debug_matrix_output(String msg, double delay)
-{
-  mtrx.clear();
-  mtrx.setCursor(0, 0);
-  mtrx.print(msg);
-  mtrx.update();
-  if (delay != -1)
-    _delay_ms(delay);
-}
 
 /**
  * Reads GMT from eeprom
@@ -167,23 +98,6 @@ void update_eeprom_timestamp(byte index, uint32_t baseTimestamp)
   eeprom_update_dword((uint32_t *)(1 + 4 * index), baseTimestamp);
 }
 
-/**
- * Just for fun, writes a sinux graph on the display
-*/
-void graph_sin(uint8_t offset)
-{
-  uint8_t x = 0;
-  uint8_t y = 0;
-  mtrx.clear();
-  mtrx.setCursor(0, 0);
-  for (uint8_t i = 0 + offset; i <= 95 + offset; i++)
-  {
-    y = 4 * (1 + sinf(25.7 * i));
-    mtrx.dot(x, y);
-    x++;
-  }
-  mtrx.update();
-}
 
 /**
  * Converts DateTime to UnixTime.
@@ -207,90 +121,6 @@ DateTime unix_time_to_date_time(UnixTime time)
 uint32_t unix_time_to_epoch_time(UnixTime unix_time)
 {
   return unix_time.getUnix() - recovery_epoch_begin_timestamp;
-}
-
-/**
- * Displays binary date output.
- */
-void display_bin(uint32_t time)
-{
-  const uint8_t START_POSITION = 16;
-  bool bin_time[32];
-  uint8_t x = START_POSITION;
-  uint8_t y = 0;
-
-  // convert to binary array
-  for (uint8_t i = 0; i < sizeof(uint32_t) * 8; i++)
-  {
-    uint8_t num = (time >> i) & 1;
-    bin_time[sizeof(uint32_t) * 8 - 1 - i] = num == 1;
-  }
-
-  // print line for 1, rectangle for 0
-  for (uint8_t i = 0; i < sizeof(uint32_t) * 8; i++)
-  {
-    bool tmp_bool = bin_time[i];
-    if (tmp_bool)
-    {
-      mtrx.lineV(x, y, y + HEIGHT - 1);
-    }
-    else
-    {
-      mtrx.rectWH(x, y, WiDITH, HEIGHT, GFX_STROKE);
-    }
-    x = x + WiDITH + 1;
-    if (x >= DISPLAY_WIDTH + START_POSITION)
-    {
-      x = START_POSITION;
-      y = HEIGHT + 1;
-    }
-  }
-}
-
-/**
- * Calls appropriate display function by number system.
- */
-void display_time(uint32_t time_to_display, uint8_t mode)
-{
-  mtrx.clear();
-  mtrx.setCursor(0, 0);
-  switch (mode)
-  {
-  case display_mode::bin:
-  {
-    display_bin(time_to_display);
-  }
-  break;
-  case display_mode::oct:
-  {
-    mtrx.setCursor(16, 0);
-    mtrx.print(time_to_display, display_mode::oct);
-  }
-  break;
-  case display_mode::dec:
-  {
-    mtrx.setCursor(16, 0);
-    mtrx.print(time_to_display, display_mode::dec);
-  }
-  break;
-  case display_mode::hex:
-  {
-    mtrx.setCursor(27, 0);
-    mtrx.print(time_to_display, display_mode::hex);
-  }
-  break;
-  // only for dev and debug
-  case display_mode::str:
-  {
-    char date[17] = "YYYY:MM:DD:hh:mm";
-    rtc.now().toString(date);
-    mtrx.print(date);
-  }
-  break;
-  default:
-    break;
-  }
-  mtrx.update();
 }
 
 /**
@@ -388,13 +218,6 @@ void rtc_setup()
 
   // start oscilaating at SQW with 1Hz
   rtc.writeSqwPinMode(DS3231_SquareWave1Hz);
-}
-
-void display_setup()
-{
-  mtrx.begin();
-  mtrx.clear();
-  mtrx.update();
 }
 
 /**
@@ -545,19 +368,6 @@ void set_current_time()
   rtc.adjust(unix_time_to_date_time(current_time));
 
   dislpay_timestamps();
-}
-
-void debug_output_unixtimestamp(UnixTime unix_time)
-{
-  // debug_output(unix_time.year);
-  debug_output(unix_time.month);
-  debug_output(unix_time.day);
-  debug_output(unix_time.hour);
-  debug_output(unix_time.minute);
-  // char *msg = (char *)calloc(32, sizeof(char));
-  // sprintf(msg, "%d:%d:%d:%d", unix_time.year, unix_time.month, unix_time.hour, unix_time.minute);
-  // Serial.println(msg);
-  // free(msg);
 }
 
 void set_epoch_time()
