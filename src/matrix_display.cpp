@@ -102,7 +102,7 @@ void display_bin(uint32_t time)
 /**
  * Calls appropriate display function by number system.
  */
-void display_time(uint32_t time_to_display, uint8_t mode)
+void display_time(uint32_t time_to_display, uint8_t mode, RTC_DS3231 rtc)
 {
   mtrx.clear();
   mtrx.setCursor(0, 0);
@@ -135,7 +135,7 @@ void display_time(uint32_t time_to_display, uint8_t mode)
   case display_mode::str:
   {
     char date[17] = "YYYY:MM:DD:hh:mm";
-    // rtc.now().toString(date);
+    rtc.now().toString(date);
     mtrx.print(date);
   }
   break;

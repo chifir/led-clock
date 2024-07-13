@@ -22,7 +22,7 @@ void display_update()
     trigger_display_update = false;
     DateTime now = rtc.now();
     UnixTime unix_time = date_time_to_unix_time(current_timezone, now);
-    display_time(unix_time_to_epoch_time(unix_time, epoch_begin_timestamp), MODE[CURRENT_MODE_INDEX]);
+    display_time(unix_time_to_epoch_time(unix_time, epoch_begin_timestamp), MODE[CURRENT_MODE_INDEX], rtc);
   }
 }
 
