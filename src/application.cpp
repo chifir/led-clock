@@ -9,6 +9,7 @@ Button set_btn(BUTTON_SET_PIN, INPUT_PULLUP, LOW);
 uint8_t CURRENT_MODE_INDEX = 0;
 bool trigger_display_update = true;
 int8_t current_timezone = 0;
+int8_t epoch_timezone = DEFAULT_TIMEZONE;
 uint32_t epoch_begin_timestamp = 0;
 uint32_t clock_timestamp = 0;
 
@@ -63,6 +64,15 @@ void rtc_interruption_handler()
   trigger_display_update = true;
 }
 
+// TODO: remove debug func
+void debug_dislpay_timestamps() 
+{
+  debug_output("EPOCH:");
+  Serial.println(get_eeprom_timestamp(EPOCH_BEGIN_OFFSET));
+  debug_output("CLOCK");
+  Serial.println(get_eeprom_timestamp(CLOCK_OFFSET));
+}
+
 /**
  * Writes default base timestamp in EEPROM, if it wasn't set previously.
  * Reads base timestamp from EEPROM.
@@ -89,15 +99,8 @@ void setup_from_eeprom()
     update_eeprom_timestamp(0, EPOCH_BEGIN);
     epoch_begin_timestamp = EPOCH_BEGIN;
   }
-}
-
-// TODO: remove debug func
-void dislpay_timestamps() 
-{
-  debug_output("EPOCH:");
-  Serial.println(get_eeprom_timestamp(EPOCH_BEGIN_OFFSET));
-  debug_output("CLOCK");
-  Serial.println(get_eeprom_timestamp(CLOCK_OFFSET));
+  debug_output("####");
+  debug_dislpay_timestamps();
 }
 
 void user_updates_current_time() 
@@ -111,29 +114,122 @@ void user_updates_current_time()
   // get time from user
   // current_time = user_input_unix_time(current_time, current_timezone);
   DateData user_date = user_input_unix_time(current_time, current_timezone, rtc, set_btn, change_mode);
-  // udpate eeprom for recovery
-  update_eeprom_timestamp(CLOCK_OFFSET, user_date.timestamp);
   // update rtc clock 
   rtc.adjust(date_data_to_date_time(user_date));
+  // udpate eeprom for recovery
+  update_eeprom_timestamp(CLOCK_OFFSET, user_date.timestamp);
 
-  dislpay_timestamps();
+  debug_dislpay_timestamps();
 }
 
 void user_updates_epoch()
 {
-  dislpay_timestamps();
+  debug_output("###");
+  debug_dislpay_timestamps();
   UnixTime epoch_start(current_timezone);
-  epoch_start.getDateTime(get_eeprom_timestamp(EPOCH_BEGIN_OFFSET));
-  debug_output("before");
+  uint32_t eeprom_epoch = get_eeprom_timestamp(EPOCH_BEGIN_OFFSET);
+  debug_output("EPOCH from EEPROM more human readable");
+  epoch_start.getDateTime(eeprom_epoch);
   debug_output_unixtimestamp(epoch_start);
+  debug_output("before what we got by reading from EEPROM");
+  debug_output("EPOCH from EEPROM");
+  debug_output(eeprom_epoch);
   // get time from user
   DateData user_epoch_start = user_input_unix_time(epoch_start, current_timezone, rtc, set_btn, change_mode);
   debug_output("after");
-  Serial.println(user_epoch_start.timestamp);
   debug_output_unixtimestamp(user_epoch_start.timestamp);
   // udpate eeprom for recovery
   update_eeprom_timestamp(EPOCH_BEGIN_OFFSET, user_epoch_start.timestamp);
-  dislpay_timestamps();
+  debug_output("READ from EEPROM after update");
+  debug_dislpay_timestamps();
+  debug_output("###");
+}
+
+void serial_print(const char* msg, uint64_t num) {
+    char *str = (char *) calloc(32, sizeof(char));
+    sprintf(str, "%s: %u", msg, num);
+    Serial.println(str);
+    free(str);
+}
+
+void splitUnix(uint32_t unix_time, int8_t _gmt) {
+    uint16_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t second;
+    uint8_t dayOfWeek;
+
+    unix_time += _gmt * 3600ul;
+    second = unix_time % 60ul;
+    unix_time /= 60ul;
+    minute = unix_time % 60ul;
+    unix_time /= 60ul;
+    hour = unix_time % 24ul;
+    unix_time /= 24ul;
+    dayOfWeek = (unix_time + 4) % 7;
+    if (!dayOfWeek) dayOfWeek = 7;
+    serial_print("unix_time", unix_time);
+    uint64_t z = unix_time + 719468;
+    serial_print("z", z);
+    uint8_t era = z / 146097ul;
+    serial_print("era", era);
+    uint32_t doe = z - era * 146097ul;
+    uint16_t doe_16 = z - era * 146097ul;
+    uint32_t doe_32 = z - era * 146097ul;
+    serial_print("doe_16", doe_16);
+    serial_print("doe_32", doe_32);
+    uint16_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    uint16_t y = yoe + era * 400;
+    uint16_t doy = doe - (yoe * 365 + yoe / 4 - yoe / 100);
+    uint16_t mp = (doy * 5 + 2) / 153;
+    day = doy - (mp * 153 + 2) / 5 + 1;
+    month = mp + (mp < 10 ? 3 : -9);
+    y += (month <= 2);
+    year = y;
+
+  char *msg = (char *)calloc(32, sizeof(char));
+  sprintf(msg, "%d:%d:%d:%d:%d", year, month, day, hour, minute);
+  Serial.println(msg);
+}
+
+void user_updates_epoch_v2()
+{
+  debug_output("user_updates_epoch_v2 start");
+  debug_dislpay_timestamps();
+  UnixTime epoch_unix_time(epoch_timezone);
+  epoch_unix_time.getDateTime(epoch_begin_timestamp);
+  DateTime dateTime(epoch_begin_timestamp);
+  debug_output("date algo: ");
+  splitUnix(epoch_begin_timestamp, 3);
+  splitUnix(1725792638, 3);
+
+  debug_output("date input using Unix");
+
+  UnixTime unix_time(3);
+  unix_time.setDateTime(2024, 12, 29, 8, 30, 0);
+  char *msg = (char *)calloc(32, sizeof(char));
+  sprintf(msg, "%d:%d:%d:%d:%d", unix_time.year, unix_time.month, unix_time.day, unix_time.hour, unix_time.minute);
+  Serial.println(msg);
+  Serial.println(unix_time.getUnix());
+  free(msg);
+  debug_output("date input using Stamp");
+  Stamp input_stamp(1986, 12, 29, 8, 30, 0);
+  *msg = (char *)calloc(32, sizeof(char));
+  sprintf(msg, "%d:%d:%d:%d:%d", input_stamp.year(), input_stamp.month(), input_stamp.day(), input_stamp.hour(), input_stamp.minute());
+  Serial.println(msg);
+  free(msg);
+  
+
+  debug_output("date using Stamp");
+  Stamp stamp(epoch_begin_timestamp);
+  *msg = (char *)calloc(32, sizeof(char));
+  sprintf(msg, "%d:%d:%d:%d:%d", stamp.year(), stamp.month(), stamp.day(), stamp.hour(), stamp.minute());
+  Serial.println(msg);
+  free(msg);
+  debug_output_unixtimestamp(epoch_unix_time);
+  debug_output("user_updates_epoch_v2 end");
 }
 
 void menu_action(uint8_t option)
@@ -147,7 +243,8 @@ void menu_action(uint8_t option)
     break;
   case SET_EPOCH_TIME:
   {
-    user_updates_epoch();
+    // user_updates_epoch();
+    user_updates_epoch_v2();
   }
     break;  
   default:
@@ -221,7 +318,7 @@ void setup_app(){
   rtc_setup();
   debug_output("setup interruptions");
   setup_interruptions();
-  dislpay_timestamps();
+  debug_dislpay_timestamps();
   CURRENT_MODE_INDEX = 4;
 }
 

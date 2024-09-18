@@ -13,7 +13,7 @@ const char* USER_INPUT_MINUTE = "MINUTE: %d";
  */
 int16_t check_user_input(int16_t min, int16_t max, int16_t input)
 {
-  return (input < min) ? min : ((input > max) ? max : input);
+  return (input < min) ? max - input : ((input > max) ? (min + input - max) : input);
 }
 
 /**

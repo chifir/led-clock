@@ -19,6 +19,8 @@ MAX7219<12, 1, 5> mtrx;
 void display_setup()
 {
   mtrx.begin();
+  mtrx.setBright(15);
+
   mtrx.clear();
   mtrx.update();
 }
