@@ -76,30 +76,19 @@ uint8_t get_days_in_month(uint8_t month, uint16_t year)
 /**
  * Get and converts user input into unixtime object.
  */
-DateData user_input_unix_time(UnixTime src_time, int8_t src_time_zone, RTC_DS3231 rtc, Button plus_button, Button minus_button)
+UnixStamp user_input_time(civil_time src_time, int8_t src_time_zone, RTC_DS3231 rtc, Button plus_button, Button minus_button)
 {
-  debug_output("user_input_unix_time");
-  DateData src_date_data;
-  src_date_data.timestamp = src_time.getUnix();
-  src_date_data.zone = src_time_zone;
-  do
-  {
+  debug_output("user_input_time");  
     int8_t time_zone = (int8_t)user_inupt(USER_INPUT_TZ_UTC, -11, 12, (int16_t)src_time_zone, rtc, plus_button, minus_button);
     uint16_t year = (uint16_t)user_inupt(USER_INPUT_YEAR, 1970, 2099, (int16_t)src_time.year, rtc, plus_button, minus_button);
-    uint8_t month = (uint8_t)user_inupt(USER_INPUT_MONTH, 1, 12, (int16_t)src_time.month, rtc, plus_button, minus_button);
+    uint8_t month = (uint8_t)user_inupt(USER_INPUT_MONTH, 1, 12, (int16_t)src_time.mon, rtc, plus_button, minus_button);
     uint8_t max_day = (uint8_t)get_days_in_month(month, year);
     uint8_t day = (uint8_t)user_inupt(USER_INPUT_DAY, 1, max_day, (int16_t)src_time.day, rtc, plus_button, minus_button);
     uint8_t hour = (uint8_t)user_inupt(USER_INPUT_HOUR, 0, 23, (int16_t)src_time.hour, rtc, plus_button, minus_button);
-    uint8_t minute = (uint8_t)user_inupt(USER_INPUT_MINUTE, 0, 59, (int16_t)src_time.minute, rtc, plus_button, minus_button);
-    DateData user_date;
-    user_date.zone = time_zone;
-    
-    UnixTime unix_time(time_zone);
-    unix_time.setDateTime(year, month, day, hour, minute, 0);
-    
-    user_date.timestamp = unix_time.getUnix();
-    return user_date;
-  } while (true);
+    uint8_t minute = (uint8_t)user_inupt(USER_INPUT_MINUTE, 0, 59, (int16_t)src_time.min, rtc, plus_button, minus_button);
 
-  return src_date_data;
+    civil_time user_input{0, minute, hour, day, month, year};    
+    UnixStamp unix_stamp(user_input, time_zone);
+
+    return unix_stamp;
 }

@@ -1,8 +1,6 @@
 #ifndef APPLICATION_H
 #define APPLICATION_H
 
-#include <UnixTime.h>
-#include <Stamp.h>
 #include "rtc_clock.h"
 #include "debug_output.h"
 #include "storage.h"

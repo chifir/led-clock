@@ -41,10 +41,11 @@ void debug_output(int num)
   }
 }
 
-void debug_output_unixtimestamp(UnixTime unix_time)
+void debug_output_unixtimestamp(UnixStamp unixStamp)
 {  
+  civil_time time = unixStamp.getTime();
   char *msg = (char *)calloc(32, sizeof(char));
-  sprintf(msg, "%d:%d:%d:%d:%d", unix_time.year, unix_time.month, unix_time.day, unix_time.hour, unix_time.minute);
+  sprintf(msg, "%d:%d:%d:%d:%d", time.year, time.mon, time.day, time.hour, time.min);
   Serial.println(msg);
   free(msg);
 }
