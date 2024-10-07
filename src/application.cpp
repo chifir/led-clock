@@ -139,13 +139,6 @@ void edit_epoch()
   debug_output("###");
 }
 
-void serial_print(const char* msg, uint64_t num) {
-    char *str = (char *) calloc(32, sizeof(char));
-    sprintf(str, "%s: %u", msg, num);
-    Serial.println(str);
-    free(str);
-}
-
 void menu_action(uint8_t option)
 {
   switch (option)
