@@ -50,6 +50,7 @@ void mode_action(Button btn)
 {
   if (btn.hasClicks())
   {
+    debug_output("mode_action");
     display_format_mode_change();
   }
 }
@@ -141,6 +142,9 @@ void edit_epoch()
 
 void menu_action(uint8_t option)
 {
+  debug_output("menu_action");
+  debug_output(option);
+
   switch (option)
   {
   case SET_CURRENT_TIME:
@@ -163,12 +167,20 @@ void menu_action(uint8_t option)
 
 void display_edit_time() 
 {
-
+  debug_output("display_edit_time");
+  char date[17] = "YYYY/MM/DD hh:mm";
+  rtc.now().toString(date);
+  matrix_display_string(date);
 }
 
 void display_edit_epoch()
 {
-
+  debug_output("display_edit_epoch");
+  uint32_t epoch = get_eeprom_timestamp(EPOCH_BEGIN_OFFSET);
+  civil_time epoch_civil = UnixStamp::convertUnixToTime(epoch, 0);
+  char *date = (char *)calloc(32, sizeof(char));
+  sprintf(date, "%d/%d/%d %d:%d", epoch_civil.year, epoch_civil.mon, epoch_civil.day, epoch_civil.hour, epoch_civil.min);  
+  matrix_display_string(date);
 }
 
 /**
@@ -178,25 +190,41 @@ uint8_t choose_option()
 {
   // debug_matrix_output(">> Setup", -1);
   uint32_t menu_seconds = 0;
-  uint8_t option = 0;
+  uint8_t option = NO_ACTION;
+  bool should_display_edit_time = true;
+  menu_seconds = rtc.now().secondstime();
   do
   {
-    menu_seconds = rtc.now().secondstime();
+    choose_btn.clear();
+    settings_btn.clear();
     choose_btn.tick();
     settings_btn.tick();
 
-    display_edit_time();
-
-    if (settings_btn.hasClicks()) {
+    if (should_display_edit_time) 
+    {
+      display_edit_time();
+    } 
+    else
+    {
       display_edit_epoch();
-      if (choose_btn.hasClicks()) {
-        debug_output("choose_option: epoch");
-        option = SET_EPOCH_TIME;
-      }
-    } else if (choose_btn.hasClicks()) {
-      debug_output("choose_option: time");
-      option = SET_CURRENT_TIME;
     }
+    
+    if (settings_btn.hasClicks()) {
+      if ((should_display_edit_time == true) && !choose_btn.hasClicks())
+      {
+        should_display_edit_time = false;
+        menu_seconds = rtc.now().secondstime();
+      }
+      else if ((should_display_edit_time == false) && choose_btn.hasClicks())
+      {
+        return SET_CURRENT_TIME;
+      } 
+    } 
+    else if (choose_btn.hasClicks())
+    {
+      return SET_CURRENT_TIME;
+    }
+
   } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
   
   return option;
@@ -211,6 +239,10 @@ void settings_action(Button btn)
   {
     debug_output("settings_action");
     uint8_t option = choose_option();
+    if (option == NO_ACTION) {
+      debug_output("settings_action:NO_ACTION");
+      return;
+    }
     menu_action(option);
   }
 }

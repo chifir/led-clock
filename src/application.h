@@ -14,6 +14,7 @@
 #define DEFAULT_TIMEZONE 0
 
 // menu
+#define NO_ACTION 0
 #define SET_CURRENT_TIME 1
 #define SET_EPOCH_TIME 2
 

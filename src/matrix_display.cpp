@@ -25,6 +25,14 @@ void display_setup()
   mtrx.update();
 }
 
+void matrix_display_string(char *msg)
+{
+  mtrx.clear();
+  mtrx.setCursor(0, 0);
+  mtrx.print(msg);
+  mtrx.update();
+}
+
 void debug_matrix_output(char *msg, double delay)
 {
   mtrx.clear();

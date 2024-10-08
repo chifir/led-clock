@@ -8,6 +8,8 @@
 
 void display_setup();
 
+void matrix_display_string(char *msg);
+
 void debug_matrix_output(char *msg, double delay);
 
 void debug_matrix_output(String msg, double delay);
