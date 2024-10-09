@@ -1,11 +1,14 @@
 #include "user_input.h"
 
-const char* USER_INPUT_TZ_UTC = "TZ UTC(%d)";
-const char* USER_INPUT_YEAR = "YEAR: %d";
-const char* USER_INPUT_MONTH = "MONTH: %d";
-const char* USER_INPUT_DAY = "DAY: %d";
-const char* USER_INPUT_HOUR = "HOUR: %d";
-const char* USER_INPUT_MINUTE = "MINUTE: %d";
+enum input_field
+{
+  tz = 0,
+  year = 1,
+  mon = 2,
+  day = 3,
+  hour = 4,
+  min = 6
+};
 
 /**
  * Checks user input, min and max are range boundaries, included.
@@ -19,9 +22,10 @@ int16_t check_user_input(int16_t min, int16_t max, int16_t input)
 /**
  * Enter a value.
  */
-int16_t user_inupt(const char *msg_template, int16_t min, int16_t max, int16_t current, RTC_DS3231 rtc, Button plus_button, Button minus_button)
+int16_t user_inupt(char *msg_template, int16_t min, int16_t max, int16_t current, RTC_DS3231 rtc, Button plus_button, Button minus_button)
 {
   debug_output("user input");
+  debug_output(msg_template);
   uint32_t menu_seconds = rtc.now().secondstime();
   char *msg;
   do
@@ -31,9 +35,10 @@ int16_t user_inupt(const char *msg_template, int16_t min, int16_t max, int16_t c
     plus_button.tick();
     minus_button.tick();
 
-    msg = (char *)calloc(12, sizeof(char));
+    msg = (char *)calloc(17, sizeof(char));
     sprintf(msg, msg_template, current);
-    debug_matrix_output(msg, -1);
+    debug_output(msg);
+    matrix_display_string(msg);
 
     if (plus_button.hasClicks() || minus_button.hasClicks())
     {
@@ -42,10 +47,10 @@ int16_t user_inupt(const char *msg_template, int16_t min, int16_t max, int16_t c
     }
 
     current = check_user_input(min, max, current);
-
     free(msg);
   } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
   debug_output(current);
+  free(msg_template);
   free(msg);
   return current;
 }
@@ -73,22 +78,67 @@ uint8_t get_days_in_month(uint8_t month, uint16_t year)
   return days_in_month[month - 1];
 }
 
+char* get_msg_template(civil_time time, input_field field) 
+{
+  const char *templates[] = {"TZ UTC(%d)", "%s/%d/%d %d:%d", "%d/%s/%d %d:%d", "%d/%d/%s %d:%d", "%d/%d/%d %s:%d", "%d/%d/%d %d:%s"};
+  char *msg_template = (char *)calloc(17, sizeof(char));
+
+  switch (field)
+  {
+  case input_field::tz: 
+  {
+    return const_cast<char*>(templates[field]);
+  }
+    break;
+  case input_field::year: 
+  {
+    debug_output(const_cast<char*>(templates[field]));
+    debug_output(sprintf(msg_template, templates[field], "%d", time.mon, time.day, time.hour, time.min));
+    debug_output(msg_template);
+  }
+    break;
+  case input_field::mon:
+  {
+    sprintf(msg_template, templates[field], time.year, "%d", time.day, time.hour, time.min);
+  }
+    break;
+  case input_field::day:
+  {
+    sprintf(msg_template, templates[field], time.year, time.mon, "%d", time.hour, time.min);
+  }
+    break;
+  case input_field::hour:
+  {
+    sprintf(msg_template, templates[field], time.year, time.mon, time.hour, "%d", time.min);
+  }
+    break;
+  case input_field::min:
+  {
+    sprintf(msg_template, templates[field], time.year, time.mon, time.hour, time.hour, "%d");
+  }
+    break;
+  default:
+    break;
+  }
+
+  return msg_template;
+}
+
 /**
  * Get and converts user input into unixtime object.
  */
-UnixStamp user_input_time(civil_time src_time, int8_t src_time_zone, RTC_DS3231 rtc, Button plus_button, Button minus_button)
+UnixStamp user_input_time(civil_time time, int8_t time_zone, RTC_DS3231 rtc, Button plus_button, Button minus_button)
 {
   debug_output("user_input_time");  
-    int8_t time_zone = (int8_t)user_inupt(USER_INPUT_TZ_UTC, -11, 12, (int16_t)src_time_zone, rtc, plus_button, minus_button);
-    uint16_t year = (uint16_t)user_inupt(USER_INPUT_YEAR, 1970, 2099, (int16_t)src_time.year, rtc, plus_button, minus_button);
-    uint8_t month = (uint8_t)user_inupt(USER_INPUT_MONTH, 1, 12, (int16_t)src_time.mon, rtc, plus_button, minus_button);
-    uint8_t max_day = (uint8_t)get_days_in_month(month, year);
-    uint8_t day = (uint8_t)user_inupt(USER_INPUT_DAY, 1, max_day, (int16_t)src_time.day, rtc, plus_button, minus_button);
-    uint8_t hour = (uint8_t)user_inupt(USER_INPUT_HOUR, 0, 23, (int16_t)src_time.hour, rtc, plus_button, minus_button);
-    uint8_t minute = (uint8_t)user_inupt(USER_INPUT_MINUTE, 0, 59, (int16_t)src_time.min, rtc, plus_button, minus_button);
+  time_zone = (int8_t)user_inupt(get_msg_template(time, input_field::tz), -11, 12, (int16_t)time_zone, rtc, plus_button, minus_button);
+  time.year = (uint16_t)user_inupt(get_msg_template(time, input_field::year), 1970, 2099, (int16_t)time.year, rtc, plus_button, minus_button);
+  time.mon = (uint8_t)user_inupt(get_msg_template(time, input_field::mon), 1, 12, (int16_t)time.mon, rtc, plus_button, minus_button);
+  uint8_t max_day = get_days_in_month(time.mon, time.year);
+  time.day = (uint8_t)user_inupt(get_msg_template(time, input_field::day), 1, max_day, (int16_t)time.day, rtc, plus_button, minus_button);
+  time.hour = (uint8_t)user_inupt(get_msg_template(time, input_field::hour), 0, 23, (int16_t)time.hour, rtc, plus_button, minus_button);
+  time.min = (uint8_t)user_inupt(get_msg_template(time, input_field::min), 0, 59, (int16_t)time.min, rtc, plus_button, minus_button);
 
-    civil_time user_input{0, minute, hour, day, month, year};    
-    UnixStamp unix_stamp(user_input, time_zone);
+  UnixStamp unix_stamp(time, time_zone);
 
-    return unix_stamp;
+  return unix_stamp;
 }

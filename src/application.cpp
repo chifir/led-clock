@@ -110,13 +110,13 @@ void edit_current_time()
   debug_output("edit_current_time start");
   // convert to unix
   DateTime now = rtc.now();
-  UnixStamp current_time(now.unixtime(), current_timezone);
-  UnixStamp user_date = user_input_time(current_time.getTime(), current_timezone, rtc, choose_btn, mode_btn);
+  civil_time current_time = UnixStamp::convertUnixToTime(now.unixtime(), current_timezone);
+  UnixStamp user_time = user_input_time(current_time, current_timezone, rtc, choose_btn, mode_btn);
   // update rtc clock 
-  DateTime time(user_date.getUnix());
+  DateTime time(user_time.getUnix());
   rtc.adjust(time);
   // udpate eeprom for recovery
-  update_eeprom_timestamp(CLOCK_OFFSET, user_date.getUnix());
+  update_eeprom_timestamp(CLOCK_OFFSET, user_time.getUnix());
 
   debug_dislpay_timestamps();
 }
@@ -178,9 +178,10 @@ void display_edit_epoch()
   debug_output("display_edit_epoch");
   uint32_t epoch = get_eeprom_timestamp(EPOCH_BEGIN_OFFSET);
   civil_time epoch_civil = UnixStamp::convertUnixToTime(epoch, 0);
-  char *date = (char *)calloc(32, sizeof(char));
+  char *date = (char *)calloc(17, sizeof(char));
   sprintf(date, "%d/%d/%d %d:%d", epoch_civil.year, epoch_civil.mon, epoch_civil.day, epoch_civil.hour, epoch_civil.min);  
   matrix_display_string(date);
+  free(date);
 }
 
 /**
@@ -188,9 +189,7 @@ void display_edit_epoch()
  */
 uint8_t choose_option()
 {
-  // debug_matrix_output(">> Setup", -1);
   uint32_t menu_seconds = 0;
-  uint8_t option = NO_ACTION;
   bool should_display_edit_time = true;
   menu_seconds = rtc.now().secondstime();
   do
@@ -203,31 +202,28 @@ uint8_t choose_option()
     if (should_display_edit_time) 
     {
       display_edit_time();
+      if (choose_btn.hasClicks())
+      {
+        return SET_CURRENT_TIME;
+      }
     } 
     else
     {
       display_edit_epoch();
-    }
-    
-    if (settings_btn.hasClicks()) {
-      if ((should_display_edit_time == true) && !choose_btn.hasClicks())
+      if (choose_btn.hasClicks())
       {
-        should_display_edit_time = false;
-        menu_seconds = rtc.now().secondstime();
+        return SET_EPOCH_TIME;
       }
-      else if ((should_display_edit_time == false) && choose_btn.hasClicks())
-      {
-        return SET_CURRENT_TIME;
-      } 
-    } 
-    else if (choose_btn.hasClicks())
-    {
-      return SET_CURRENT_TIME;
     }
 
+    if (settings_btn.hasClicks()) 
+    {
+      should_display_edit_time = !should_display_edit_time;
+      menu_seconds = rtc.now().secondstime();
+    }
   } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
   
-  return option;
+  return NO_ACTION;
 }
 
 /**
