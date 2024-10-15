@@ -46,9 +46,9 @@ void display_format_mode_change()
 /**
  * Changes date format by button click.
  */
-void mode_action(Button btn)
+void mode_action(Button *btn)
 {
-  if (btn.hasClicks())
+  if (btn->hasClicks())
   {
     debug_output("mode_action");
     display_format_mode_change();
@@ -119,6 +119,7 @@ void edit_current_time()
   update_eeprom_timestamp(CLOCK_OFFSET, user_time.getUnix());
 
   debug_dislpay_timestamps();
+  debug_output("edit_current_time end");
 }
 
 void edit_epoch()
@@ -167,7 +168,6 @@ void menu_action(uint8_t option)
 
 void display_edit_time() 
 {
-  debug_output("display_edit_time");
   char date[17] = "YYYY/MM/DD hh:mm";
   rtc.now().toString(date);
   matrix_display_string(date);
@@ -175,7 +175,6 @@ void display_edit_time()
 
 void display_edit_epoch()
 {
-  debug_output("display_edit_epoch");
   uint32_t epoch = get_eeprom_timestamp(EPOCH_BEGIN_OFFSET);
   civil_time epoch_civil = UnixStamp::convertUnixToTime(epoch, 0);
   char *date = (char *)calloc(17, sizeof(char));
@@ -187,22 +186,22 @@ void display_edit_epoch()
 /**
  * Setup base time and/or current time.
  */
-uint8_t choose_option()
+uint8_t choose_option(RTC_DS3231 *rtc, Button *choose_btn, Button *settings_btn)
 {
   uint32_t menu_seconds = 0;
   bool should_display_edit_time = true;
-  menu_seconds = rtc.now().secondstime();
+  menu_seconds = rtc->now().secondstime();
   do
   {
-    choose_btn.clear();
-    settings_btn.clear();
-    choose_btn.tick();
-    settings_btn.tick();
+    choose_btn->clear();
+    settings_btn->clear();
+    choose_btn->tick();
+    settings_btn->tick();
 
     if (should_display_edit_time) 
     {
       display_edit_time();
-      if (choose_btn.hasClicks())
+      if (choose_btn->hasClicks())
       {
         return SET_CURRENT_TIME;
       }
@@ -210,18 +209,18 @@ uint8_t choose_option()
     else
     {
       display_edit_epoch();
-      if (choose_btn.hasClicks())
+      if (choose_btn->hasClicks())
       {
         return SET_EPOCH_TIME;
       }
     }
 
-    if (settings_btn.hasClicks()) 
+    if (settings_btn->hasClicks()) 
     {
       should_display_edit_time = !should_display_edit_time;
-      menu_seconds = rtc.now().secondstime();
+      menu_seconds = rtc->now().secondstime();
     }
-  } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
+  } while ((rtc->now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
   
   return NO_ACTION;
 }
@@ -229,12 +228,12 @@ uint8_t choose_option()
 /**
  * settings_action -> choose_option -> menu_action -> edit_current_time/edit_current_time -> user_input_time
  */
-void settings_action(Button btn)
+void settings_action(RTC_DS3231 *rtc, Button *choose_btn, Button *settings_btn)
 {
-  if (btn.hasClicks())
+  if (settings_btn->hasClicks())
   {
     debug_output("settings_action");
-    uint8_t option = choose_option();
+    uint8_t option = choose_option(rtc, choose_btn, settings_btn);
     if (option == NO_ACTION) {
       debug_output("settings_action:NO_ACTION");
       return;
@@ -278,9 +277,9 @@ void run_app() {
   settings_btn.clear();
   settings_btn.tick();
 
-  mode_action(mode_btn);
+  mode_action(&mode_btn);
 
-  settings_action(settings_btn);
+  settings_action(&rtc, &choose_btn, &settings_btn);
   
   update_display();
 }

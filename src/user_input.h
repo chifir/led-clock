@@ -7,6 +7,7 @@
 #include "stdint.h"
 #include "matrix_display.h"
 #include "rtc_clock.h"
+#include "memory.h"
 
 const uint8_t MENU_THRESSHOLD = 5;
 
