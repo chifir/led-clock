@@ -11,6 +11,6 @@
 
 const uint8_t MENU_THRESSHOLD = 5;
 
-UnixStamp user_input_time(civil_time src_time, int8_t src_time_zone, RTC_DS3231 rtc, Button plus_button, Button minus_button);
+UnixStamp user_input_time(civil_time time, int8_t time_zone, RTC_DS3231 *rtc, Button *next_position_button, Button *plus_button, Button *minus_button);
 
 #endif

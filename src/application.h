@@ -6,6 +6,7 @@
 #include "storage.h"
 #include "matrix_display.h"
 #include "user_input.h"
+#include "memory.h"
 
 #define EPOCH_BEGIN 536229000
 #define EPOCH_BEGIN_OFFSET 0

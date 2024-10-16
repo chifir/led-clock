@@ -33,26 +33,6 @@ void matrix_display_string(char *msg)
   mtrx.update();
 }
 
-void debug_matrix_output(char *msg, double delay)
-{
-  mtrx.clear();
-  mtrx.setCursor(0, 0);
-  mtrx.print(msg);
-  mtrx.update();
-  if (delay != -1)
-    _delay_ms(delay);
-}
-
-void debug_matrix_output(String msg, double delay)
-{
-  mtrx.clear();
-  mtrx.setCursor(0, 0);
-  mtrx.print(msg);
-  mtrx.update();
-  if (delay != -1)
-    _delay_ms(delay);
-}
-
 /**
  * Just for fun, writes a sinux graph on the display
 */

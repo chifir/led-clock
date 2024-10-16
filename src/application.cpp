@@ -50,7 +50,6 @@ void mode_action(Button *btn)
 {
   if (btn->hasClicks())
   {
-    debug_output("mode_action");
     display_format_mode_change();
   }
 }
@@ -64,15 +63,6 @@ void mode_action(Button *btn)
 void rtc_interruption_handler()
 {
   trigger_display_update = true;
-}
-
-// TODO: remove debug func
-void debug_dislpay_timestamps() 
-{
-  debug_output("EPOCH:");
-  Serial.println(get_eeprom_timestamp(EPOCH_BEGIN_OFFSET));
-  debug_output("CLOCK");
-  Serial.println(get_eeprom_timestamp(CLOCK_OFFSET));
 }
 
 /**
@@ -102,43 +92,31 @@ void setup_from_eeprom()
     epoch_begin_timestamp = EPOCH_BEGIN;
   }
   debug_output("####");
-  debug_dislpay_timestamps();
 }
 
 void edit_current_time() 
 {
-  debug_output("edit_current_time start");
   // convert to unix
   DateTime now = rtc.now();
   civil_time current_time = UnixStamp::convertUnixToTime(now.unixtime(), current_timezone);
-  UnixStamp user_time = user_input_time(current_time, current_timezone, rtc, choose_btn, mode_btn);
+  UnixStamp user_time = user_input_time(current_time, current_timezone, &rtc, &settings_btn, &choose_btn, &mode_btn);
   // update rtc clock 
   DateTime time(user_time.getUnix());
   rtc.adjust(time);
   // udpate eeprom for recovery
   update_eeprom_timestamp(CLOCK_OFFSET, user_time.getUnix());
-
-  debug_dislpay_timestamps();
-  debug_output("edit_current_time end");
 }
 
 void edit_epoch()
 {
-  debug_output("edit_epoch");
-  debug_dislpay_timestamps();
   uint32_t eeprom_epoch = get_eeprom_timestamp(EPOCH_BEGIN_OFFSET);
   UnixStamp src_epoch_stamp(eeprom_epoch, current_timezone);
-  debug_output("before");
   debug_output_unixtimestamp(src_epoch_stamp.getUnix());
   // get time from user
-  UnixStamp user_input_epoch = user_input_time(src_epoch_stamp.getTime(), current_timezone, rtc, choose_btn, mode_btn);
-  debug_output("after");
+  UnixStamp user_input_epoch = user_input_time(src_epoch_stamp.getTime(), current_timezone, &rtc, &settings_btn, &choose_btn, &mode_btn);
   debug_output_unixtimestamp(user_input_epoch.getUnix());
   // udpate eeprom for recovery
   update_eeprom_timestamp(EPOCH_BEGIN_OFFSET, user_input_epoch.getUnix());
-  debug_output("READ from EEPROM after update");
-  debug_dislpay_timestamps();
-  debug_output("###");
 }
 
 void menu_action(uint8_t option)
@@ -160,7 +138,7 @@ void menu_action(uint8_t option)
     break;  
   default:
   {
-    debug_matrix_output("Good choice", -1);
+    return;
   }
     break;
   }
@@ -265,8 +243,9 @@ void setup_app(){
   rtc_setup();
   debug_output("setup interruptions");
   setup_interruptions();
-  debug_dislpay_timestamps();
   CURRENT_MODE_INDEX = 4;
+
+  debug_output_free_memory("#setup");
 }
 
 void run_app() {
