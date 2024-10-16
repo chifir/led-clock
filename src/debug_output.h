@@ -5,7 +5,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <HardwareSerial.h>
-#include <UnixTime.h>
+#include <UnixStamp.hpp>
 
 void debug_output(const char *msg);
 
@@ -15,6 +15,6 @@ void debug_output(uint16_t num);
 
 void debug_output(int num);
 
-void debug_output_unixtimestamp(UnixTime unix_time);
+void debug_output_unixtimestamp(UnixStamp unixstamp);
 
 #endif

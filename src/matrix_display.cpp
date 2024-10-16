@@ -19,28 +19,18 @@ MAX7219<12, 1, 5> mtrx;
 void display_setup()
 {
   mtrx.begin();
+  mtrx.setBright(15);
+
   mtrx.clear();
   mtrx.update();
 }
 
-void debug_matrix_output(char *msg, double delay)
+void matrix_display_string(char *msg)
 {
   mtrx.clear();
   mtrx.setCursor(0, 0);
   mtrx.print(msg);
   mtrx.update();
-  if (delay != -1)
-    _delay_ms(delay);
-}
-
-void debug_matrix_output(String msg, double delay)
-{
-  mtrx.clear();
-  mtrx.setCursor(0, 0);
-  mtrx.print(msg);
-  mtrx.update();
-  if (delay != -1)
-    _delay_ms(delay);
 }
 
 /**

@@ -3,19 +3,18 @@
 RTC_DS3231 rtc;
 
 /**
- * Converts DateTime to UnixTime.
+ * Converts DateTime to UnixStamp.
 */
-UnixTime date_time_to_unix_time(int8_t gmt, DateTime date_time) 
+UnixStamp date_time_to_unix_time(int8_t gmt, DateTime date_time) 
 {
-  UnixTime unix_time(gmt);
-  unix_time.getDateTime(date_time.unixtime());
+  UnixStamp unix_time(date_time.unixtime());
   return unix_time;
 }
 
 /**
  * Converts UnixtTime to DateTime
 */
-DateTime unix_time_to_date_time(UnixTime time)
+DateTime unix_time_to_date_time(UnixStamp time)
 {
   DateTime dateTime(time.getUnix());
   return dateTime;
@@ -31,7 +30,7 @@ DateTime date_data_to_date_time(DateData date_data)
 }
 
 
-uint32_t unix_time_to_epoch_time(UnixTime unix_time, uint32_t epoch)
+uint32_t unix_time_to_epoch_time(UnixStamp unix_time, uint32_t epoch)
 {
   return unix_time.getUnix() - epoch;
 }

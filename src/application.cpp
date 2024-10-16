@@ -1,27 +1,29 @@
 #include "application.h"
 
 #define BUTTON_CHANGE_MODE_PIN 6
-#define BUTTON_SET_PIN 7
+#define BUTTON_CHOOSE_PIN 7
+#define BUTTON_SETTINGS_PIN 8
 
-Button change_mode(BUTTON_CHANGE_MODE_PIN, INPUT_PULLUP, LOW);
-Button set_btn(BUTTON_SET_PIN, INPUT_PULLUP, LOW);
+Button mode_btn(BUTTON_CHANGE_MODE_PIN, INPUT_PULLUP, LOW);
+Button choose_btn(BUTTON_CHOOSE_PIN, INPUT_PULLUP, LOW);
+Button settings_btn(BUTTON_SETTINGS_PIN, INPUT_PULLUP, LOW);
 
 uint8_t CURRENT_MODE_INDEX = 0;
 bool trigger_display_update = true;
 int8_t current_timezone = 0;
+int8_t epoch_timezone = DEFAULT_TIMEZONE;
 uint32_t epoch_begin_timestamp = 0;
 uint32_t clock_timestamp = 0;
 
 /**
  * Update display info.
  */
-void display_update()
+void update_display()
 {
   if (trigger_display_update)
   {
     trigger_display_update = false;
-    DateTime now = rtc.now();
-    UnixTime unix_time = date_time_to_unix_time(current_timezone, now);
+    UnixStamp unix_time(rtc.now().unixtime(), current_timezone);
     display_time(unix_time_to_epoch_time(unix_time, epoch_begin_timestamp), MODE[CURRENT_MODE_INDEX], rtc);
   }
 }
@@ -44,9 +46,9 @@ void display_format_mode_change()
 /**
  * Changes date format by button click.
  */
-void button_mode_action()
+void mode_action(Button *btn)
 {
-  if (change_mode.hasClicks())
+  if (btn->hasClicks())
   {
     display_format_mode_change();
   }
@@ -89,112 +91,132 @@ void setup_from_eeprom()
     update_eeprom_timestamp(0, EPOCH_BEGIN);
     epoch_begin_timestamp = EPOCH_BEGIN;
   }
+  debug_output("####");
 }
 
-// TODO: remove debug func
-void dislpay_timestamps() 
+void edit_current_time() 
 {
-  debug_output("EPOCH:");
-  Serial.println(get_eeprom_timestamp(EPOCH_BEGIN_OFFSET));
-  debug_output("CLOCK");
-  Serial.println(get_eeprom_timestamp(CLOCK_OFFSET));
-}
-
-void user_updates_current_time() 
-{
-  debug_output("set_current_time start");
   // convert to unix
-  debug_output("get rtc.now() for converting into ");
   DateTime now = rtc.now();
-  debug_output("convert to unix");
-  UnixTime current_time = date_time_to_unix_time(current_timezone, now);
-  // get time from user
-  // current_time = user_input_unix_time(current_time, current_timezone);
-  DateData user_date = user_input_unix_time(current_time, current_timezone, rtc, set_btn, change_mode);
-  // udpate eeprom for recovery
-  update_eeprom_timestamp(CLOCK_OFFSET, user_date.timestamp);
+  civil_time current_time = UnixStamp::convertUnixToTime(now.unixtime(), current_timezone);
+  UnixStamp user_time = user_input_time(current_time, current_timezone, &rtc, &settings_btn, &choose_btn, &mode_btn);
   // update rtc clock 
-  rtc.adjust(date_data_to_date_time(user_date));
-
-  dislpay_timestamps();
+  DateTime time(user_time.getUnix());
+  rtc.adjust(time);
+  // udpate eeprom for recovery
+  update_eeprom_timestamp(CLOCK_OFFSET, user_time.getUnix());
 }
 
-void user_updates_epoch()
+void edit_epoch()
 {
-  dislpay_timestamps();
-  UnixTime epoch_start(current_timezone);
-  epoch_start.getDateTime(get_eeprom_timestamp(EPOCH_BEGIN_OFFSET));
-  debug_output("before");
-  debug_output_unixtimestamp(epoch_start);
+  uint32_t eeprom_epoch = get_eeprom_timestamp(EPOCH_BEGIN_OFFSET);
+  UnixStamp src_epoch_stamp(eeprom_epoch, current_timezone);
+  debug_output_unixtimestamp(src_epoch_stamp.getUnix());
   // get time from user
-  DateData user_epoch_start = user_input_unix_time(epoch_start, current_timezone, rtc, set_btn, change_mode);
-  debug_output("after");
-  Serial.println(user_epoch_start.timestamp);
-  debug_output_unixtimestamp(user_epoch_start.timestamp);
+  UnixStamp user_input_epoch = user_input_time(src_epoch_stamp.getTime(), current_timezone, &rtc, &settings_btn, &choose_btn, &mode_btn);
+  debug_output_unixtimestamp(user_input_epoch.getUnix());
   // udpate eeprom for recovery
-  update_eeprom_timestamp(EPOCH_BEGIN_OFFSET, user_epoch_start.timestamp);
-  dislpay_timestamps();
+  update_eeprom_timestamp(EPOCH_BEGIN_OFFSET, user_input_epoch.getUnix());
 }
 
 void menu_action(uint8_t option)
 {
+  debug_output("menu_action");
+  debug_output(option);
+
   switch (option)
   {
   case SET_CURRENT_TIME:
   {
-    user_updates_current_time();
+    edit_current_time();
   }
     break;
   case SET_EPOCH_TIME:
   {
-    user_updates_epoch();
+    edit_epoch();
   }
     break;  
   default:
   {
-    debug_matrix_output("Good choice", -1);
+    return;
   }
     break;
   }
 }
 
+void display_edit_time() 
+{
+  char date[17] = "YYYY/MM/DD hh:mm";
+  rtc.now().toString(date);
+  matrix_display_string(date);
+}
+
+void display_edit_epoch()
+{
+  uint32_t epoch = get_eeprom_timestamp(EPOCH_BEGIN_OFFSET);
+  civil_time epoch_civil = UnixStamp::convertUnixToTime(epoch, 0);
+  char *date = (char *)calloc(17, sizeof(char));
+  sprintf(date, "%d/%d/%d %d:%d", epoch_civil.year, epoch_civil.mon, epoch_civil.day, epoch_civil.hour, epoch_civil.min);  
+  matrix_display_string(date);
+  free(date);
+}
 
 /**
  * Setup base time and/or current time.
  */
-void setup_menu()
+uint8_t choose_option(RTC_DS3231 *rtc, Button *choose_btn, Button *settings_btn)
 {
-  debug_matrix_output(">> Setup", -1);
-  uint32_t menu_seconds = rtc.now().secondstime();
-  uint8_t option = 0;
+  uint32_t menu_seconds = 0;
+  bool should_display_edit_time = true;
+  menu_seconds = rtc->now().secondstime();
   do
   {
-    set_btn.tick();
-    change_mode.tick();
-    if (set_btn.hasClicks())
+    choose_btn->clear();
+    settings_btn->clear();
+    choose_btn->tick();
+    settings_btn->tick();
+
+    if (should_display_edit_time) 
     {
-      debug_matrix_output("> Set time", -1);
-      option = SET_CURRENT_TIME;
-    }
-    else if (change_mode.hasClicks())
+      display_edit_time();
+      if (choose_btn->hasClicks())
+      {
+        return SET_CURRENT_TIME;
+      }
+    } 
+    else
     {
-      debug_matrix_output("> Set EPOCH START", -1);
-      option = SET_EPOCH_TIME;
+      display_edit_epoch();
+      if (choose_btn->hasClicks())
+      {
+        return SET_EPOCH_TIME;
+      }
     }
-  } while ((rtc.now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
+
+    if (settings_btn->hasClicks()) 
+    {
+      should_display_edit_time = !should_display_edit_time;
+      menu_seconds = rtc->now().secondstime();
+    }
+  } while ((rtc->now().secondstime() - menu_seconds) < MENU_THRESSHOLD);
   
-  menu_action(option);
+  return NO_ACTION;
 }
 
 /**
- * set_btn_action -> setup_menu -> menu_action -> user_updates_current_time/user_updates_current_time -> user_input_unix_time
+ * settings_action -> choose_option -> menu_action -> edit_current_time/edit_current_time -> user_input_time
  */
-void set_btn_action()
+void settings_action(RTC_DS3231 *rtc, Button *choose_btn, Button *settings_btn)
 {
-  if (set_btn.hasClicks())
+  if (settings_btn->hasClicks())
   {
-    debug_output("set btn click");
-    setup_menu();
+    debug_output("settings_action");
+    uint8_t option = choose_option(rtc, choose_btn, settings_btn);
+    if (option == NO_ACTION) {
+      debug_output("settings_action:NO_ACTION");
+      return;
+    }
+    menu_action(option);
   }
 }
 
@@ -221,16 +243,22 @@ void setup_app(){
   rtc_setup();
   debug_output("setup interruptions");
   setup_interruptions();
-  dislpay_timestamps();
   CURRENT_MODE_INDEX = 4;
+
+  debug_output_free_memory("#setup");
 }
 
 void run_app() {
-  change_mode.clear();
-  set_btn.clear();
-  change_mode.tick();
-  set_btn.tick();
-  button_mode_action();
-  set_btn_action();
-  display_update();
+  mode_btn.clear();
+  choose_btn.clear();
+  mode_btn.tick();
+  choose_btn.tick();
+  settings_btn.clear();
+  settings_btn.tick();
+
+  mode_action(&mode_btn);
+
+  settings_action(&rtc, &choose_btn, &settings_btn);
+  
+  update_display();
 }
