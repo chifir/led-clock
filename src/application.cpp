@@ -23,7 +23,7 @@ void update_display()
   if (trigger_display_update)
   {
     trigger_display_update = false;
-    UnixStamp unix_time(rtc.now().unixtime(), current_timezone);
+    UnixStamp unix_time(rtc.now().unixtime());
     display_time(unix_time_to_epoch_time(unix_time, epoch_begin_timestamp), MODE[CURRENT_MODE_INDEX], rtc);
   }
 }
@@ -110,10 +110,10 @@ void edit_current_time()
 void edit_epoch()
 {
   uint32_t eeprom_epoch = get_eeprom_timestamp(EPOCH_BEGIN_OFFSET);
-  UnixStamp src_epoch_stamp(eeprom_epoch, current_timezone);
+  UnixStamp src_epoch_stamp(eeprom_epoch);
   debug_output_unixtimestamp(src_epoch_stamp.getUnix());
   // get time from user
-  UnixStamp user_input_epoch = user_input_time(src_epoch_stamp.getTime(), current_timezone, &rtc, &settings_btn, &choose_btn, &mode_btn);
+  UnixStamp user_input_epoch = user_input_time(src_epoch_stamp.getTimeInTz(current_timezone), current_timezone, &rtc, &settings_btn, &choose_btn, &mode_btn);
   debug_output_unixtimestamp(user_input_epoch.getUnix());
   // udpate eeprom for recovery
   update_eeprom_timestamp(EPOCH_BEGIN_OFFSET, user_input_epoch.getUnix());

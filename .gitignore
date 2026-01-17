@@ -5,3 +5,5 @@
 .vscode/ipch
 .vscode/settings.json
 *.FCBak
+*.dxf
+TMP.*

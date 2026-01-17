@@ -56,7 +56,7 @@ void debug_output_unixtimestamp(UnixStamp unixStamp)
 {  
   if (DEBUG)
   {
-    civil_time time = unixStamp.getTime();
+    civil_time time = unixStamp.getTimeInTz(0);
     char *msg = (char *)calloc(32, sizeof(char));
     sprintf(msg, "%d:%d:%d:%d:%d", time.year, time.mon, time.day, time.hour, time.min);
     Serial.println(msg);
